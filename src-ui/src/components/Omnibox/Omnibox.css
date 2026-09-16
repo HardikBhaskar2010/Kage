@@ -1,0 +1,154 @@
+.omnibox {
+  display: flex;
+  align-items: center;
+  height: var(--omnibox-height);
+  padding: 0 var(--space-3);
+  gap: var(--space-2);
+  background: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+/* ─── Nav buttons ─────────────────────────────────────────────────── */
+.omnibox__nav-btns {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.omnibox__nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px; /* ensure tap target grows with padding via ::before */
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-smooth),
+              color var(--duration-fast) var(--ease-smooth);
+  position: relative;
+}
+
+/* Expanded touch area */
+.omnibox__nav-btn::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+.omnibox__nav-btn:hover:not(:disabled) {
+  background: rgba(122, 58, 82, 0.3);
+  color: var(--color-text-primary);
+}
+
+.omnibox__nav-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.omnibox__nav-btn:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+.omnibox__nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ─── URL input wrapper ───────────────────────────────────────────── */
+.omnibox__input-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  gap: var(--space-2);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  transition: border-color var(--duration-fast) var(--ease-smooth),
+              box-shadow var(--duration-fast) var(--ease-smooth);
+}
+
+.omnibox__input-wrap:focus-within {
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 3px rgba(218, 98, 125, 0.18),
+              var(--glass-glow-sm);
+  background: var(--color-surface-2);
+}
+
+/* ─── Lock icon ───────────────────────────────────────────────────── */
+.omnibox__lock {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.omnibox__lock--secure  { color: var(--color-accent-success); }
+.omnibox__lock--warn    { color: var(--color-accent-warn); }
+
+/* ─── Input field ─────────────────────────────────────────────────── */
+.omnibox__input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-chrome);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-normal);
+  caret-color: var(--color-accent-primary);
+}
+
+.omnibox__input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.omnibox__input::selection {
+  background: rgba(218, 98, 125, 0.28);
+}
+
+/* ─── Action buttons inside input wrap ───────────────────────────── */
+.omnibox__action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-smooth),
+              background var(--duration-fast) var(--ease-smooth);
+}
+
+.omnibox__action-btn:hover {
+  color: var(--color-accent-hover);
+  background: rgba(218, 98, 125, 0.15);
+}
+
+.omnibox__action-btn:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+/* ─── Reduced motion ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .omnibox__nav-btn,
+  .omnibox__input-wrap,
+  .omnibox__action-btn {
+    transition: none;
+  }
+  .omnibox__nav-btn:active:not(:disabled) {
+    transform: none;
+  }
+}

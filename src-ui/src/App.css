@@ -1,0 +1,98 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg-base);
+}
+
+/* ─── Title bar ───────────────────────────────────────────────────── */
+.app__titlebar {
+  display: flex;
+  align-items: center;
+  height: var(--titlebar-height);
+  padding: 0 var(--space-2);
+  gap: var(--space-3);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  -webkit-app-region: drag;
+}
+
+.app__titlebar button,
+.app__titlebar input {
+  -webkit-app-region: no-drag;
+}
+
+.app__titlebar-logo {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 100%;
+  padding: 0 var(--space-2);
+}
+
+.app__logo-img {
+  height: 20px;
+  width: auto;
+  object-fit: contain;
+}
+
+/* ─── Window controls ─────────────────────────────────────────────── */
+.app__window-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--space-3);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.wc-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  display: inline-block;
+}
+
+.wc-btn--min   { background: #f4bf4f; }
+.wc-btn--max   { background: #2acc5c; }
+.wc-btn--close { background: #ff5f57; }
+
+/* ─── Body ────────────────────────────────────────────────────────── */
+.app__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── Content area ───────────────────────────────────────────────── */
+.app__content {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.app__webview-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.app__webview-url {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.app__webview-note {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}

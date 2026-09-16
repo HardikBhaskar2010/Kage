@@ -1,0 +1,18 @@
+{
+  "name": "kage-workspace",
+  "version": "0.2.1",
+  "private": true,
+  "description": "KAGE (影) — Developer-First Autonomous Browser",
+  "author": "Hardik Bhaskar <hardik.bhaskar2010@gmail.com>",
+  "scripts": {
+    "dev": "npm --prefix src-ui run dev",
+    "build": "npm --prefix src-ui run build",
+    "lint:ui": "npm --prefix src-ui run lint",
+    "test:cargo": "cargo test --workspace",
+    "check:clippy": "cargo clippy --workspace -- -D warnings",
+    "fetch:cef": "python scripts/fetch-cef.py"
+  },
+  "workspaces": [
+    "src-ui"
+  ]
+}

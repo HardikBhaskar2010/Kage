@@ -1,0 +1,121 @@
+/**
+ * KAGE Design Tokens — Liquid Glass System (v2 — pixel-faithful to mockups)
+ * Specification: docs/09-ui/Design_System.md + public/Design System.png
+ */
+
+:root {
+  /* ─── Exact Palette (from Design System.png) ─────────────────────────── */
+  --color-peach:        #F9DBBD;  /* Peach · Primary Light */
+  --color-pink:         #FFA5AB;  /* Pink · Primary */
+  --color-rose:         #DA627D;  /* Rose / Magenta Accent */
+  --color-magenta:      #A53860;  /* Magenta Secondary */
+  --color-wine:         #450920;  /* Wine · Background accent */
+
+  --color-surface-1:    #2B0E16;  /* Darkest surface */
+  --color-surface-2:    #3A1421;  /* Mid surface */
+  --color-surface-3:    #5A2A3A;  /* Lighter surface */
+  --color-border:       #7A3A52;  /* Border */
+  --color-text-primary: #FCEDE0;  /* Text Primary (warm white) */
+  --color-text-secondary: #D8B8BA;/* Text Secondary */
+
+  /* ─── Semantic Colour Roles ───────────────────────────────────────────── */
+  --color-bg-base:       #1a0810;
+  --color-bg-surface:    rgba(43, 14, 22, 0.85);
+  --color-bg-elevated:   rgba(58, 20, 33, 0.92);
+  --color-bg-overlay:    rgba(249, 219, 189, 0.06);
+
+  --color-border-subtle:  rgba(122, 58, 82, 0.4);
+  --color-border-default: rgba(122, 58, 82, 0.6);
+  --color-border-strong:  rgba(218, 98, 125, 0.5);
+
+  --color-text-muted:    rgba(252, 237, 224, 0.35);
+  --color-accent-primary: #DA627D;
+  --color-accent-hover:   #FFA5AB;
+  --color-accent-glow:    #DA627D;
+  --color-accent-error:   #f06070;
+  --color-accent-warn:    #f4a046;
+  --color-accent-success: #78d4a0;
+  --color-accent-info:    #6ab8f0;
+  --color-accent-active:  rgba(218, 98, 125, 0.18);
+
+  /* ─── Liquid Glass ────────────────────────────────────────────────────── */
+  --glass-blur-sm:  blur(8px);
+  --glass-blur-md:  blur(16px);
+  --glass-blur-lg:  blur(28px);
+  --glass-blur-xl:  blur(48px);
+
+  --glass-bg-panel:     rgba(43, 14, 22, 0.82);
+  --glass-bg-modal:     rgba(30, 8, 18, 0.92);
+  --glass-border:       rgba(122, 58, 82, 0.55);
+  --glass-shadow:       0 8px 32px rgba(69, 9, 32, 0.6),
+                        0 0 0 1px rgba(218, 98, 125, 0.08);
+  --glass-glow-sm:      0 0 12px rgba(218, 98, 125, 0.18);
+  --glass-glow-md:      0 0 28px rgba(218, 98, 125, 0.28);
+  --glass-glow-lg:      0 0 56px rgba(218, 98, 125, 0.38);
+
+  /* Primary button gradient */
+  --btn-primary-bg: linear-gradient(135deg, #DA627D 0%, #A53860 100%);
+  --btn-primary-hover: linear-gradient(135deg, #FFA5AB 0%, #DA627D 100%);
+
+  /* ─── Typography ─────────────────────────────────────────────────────── */
+  --font-chrome:    "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono:      "JetBrains Mono", "Fira Code", monospace;
+
+  --text-xs:   0.6875rem;  /* 11px */
+  --text-sm:   0.75rem;    /* 12px */
+  --text-base: 0.875rem;   /* 14px */
+  --text-md:   1rem;       /* 16px */
+  --text-lg:   1.125rem;   /* 18px */
+  --text-xl:   1.25rem;    /* 20px */
+
+  --weight-normal:   400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+  --leading-tight:   1.2;
+  --leading-normal:  1.5;
+
+  /* ─── Spacing (4px base) ─────────────────────────────────────────────── */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* ─── Radii ──────────────────────────────────────────────────────────── */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   18px;
+  --radius-2xl:  24px;
+  --radius-full: 9999px;
+
+  /* ─── Z-index ────────────────────────────────────────────────────────── */
+  --z-base:       0;
+  --z-raised:    10;
+  --z-tab-strip: 20;
+  --z-omnibox:   30;
+  --z-sidebar:   40;
+  --z-overlay:   50;
+  --z-modal:     60;
+  --z-toast:     70;
+
+  /* ─── Animation ──────────────────────────────────────────────────────── */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth:    cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast:   150ms;
+  --duration-normal: 250ms;
+  --duration-slow:   400ms;
+
+  /* ─── Layout dimensions (matching Browsing Screen mockup) ────────────── */
+  --titlebar-height: 40px;     /* Top nav bar with KAGE logo + tabs */
+  --omnibox-height:  48px;     /* URL + search bar row */
+  --icon-sidebar-w:  56px;     /* Left collapsed icon sidebar */
+  --ai-sidebar-w:    340px;    /* Right AI Developer Assistant panel */
+  --tab-height:      36px;
+}

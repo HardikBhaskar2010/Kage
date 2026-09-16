@@ -1,0 +1,29 @@
+[package]
+name = "kage-host"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tauri 2.x native host process — CEF lifecycle, Win32 window, typed IPC handlers"
+
+[lib]
+name = "kage_host_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+kage-core    = { path = "../crates/kage-core" }
+kage-storage = { path = "../crates/kage-storage" }
+kage-context = { path = "../crates/kage-context" }
+kage-cdp     = { path = "../crates/kage-cdp" }
+
+tauri        = { version = "2", features = ["devtools"] }
+tokio        = { version = "1", features = ["full"] }
+serde        = { version = "1.0", features = ["derive"] }
+serde_json   = "1.0"
+thiserror    = "2.0"
+tracing      = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+tauri-build  = { version = "2", features = [] }

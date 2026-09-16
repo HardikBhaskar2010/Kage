@@ -1,0 +1,119 @@
+/**
+ * KAGE Global Styles — Liquid Glass Browser Chrome
+ * Imports: design tokens, Google Fonts
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+@import "./tokens/tokens.css";
+
+/* ─── Reset ────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-chrome);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Remove default focus ring; we use a custom one */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Scrollbars ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+/* ─── Liquid Glass utility classes ──────────────────────────────────────── */
+.glass-panel {
+  background: var(--glass-bg-panel);
+  backdrop-filter: var(--glass-blur-md);
+  -webkit-backdrop-filter: var(--glass-blur-md);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-elevated {
+  background: var(--color-bg-elevated);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-glow-sm);
+}
+
+.glass-modal {
+  background: var(--glass-bg-modal);
+  backdrop-filter: var(--glass-blur-xl);
+  -webkit-backdrop-filter: var(--glass-blur-xl);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--glass-shadow), var(--glass-glow-md);
+}
+
+/* ─── Typography utilities ──────────────────────────────────────────────── */
+.text-mono {
+  font-family: var(--font-mono);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-peach-200), var(--color-peach-400));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ─── Interactive state tokens ──────────────────────────────────────────── */
+.interactive {
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-smooth),
+              border-color var(--duration-fast) var(--ease-smooth),
+              box-shadow var(--duration-fast) var(--ease-smooth);
+  user-select: none;
+}
+
+.interactive:hover {
+  background: var(--color-bg-overlay);
+}
+
+.interactive:active {
+  opacity: 0.8;
+}
+
+/* ─── Gradient background for the app ──────────────────────────────────── */
+.kage-bg {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(69, 9, 32, 0.4) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 80% at 80% 90%, rgba(44, 9, 24, 0.5) 0%, transparent 70%),
+    var(--color-bg-base);
+}

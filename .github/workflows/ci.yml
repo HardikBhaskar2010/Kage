@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Job 1: Rust — build, test, clippy
+  # ─────────────────────────────────────────────────────────────────
+  rust:
+    name: Rust (build · test · clippy)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build workspace (all crates)
+        run: cargo build --workspace --all-targets
+
+      - name: Run all unit tests
+        run: cargo test --workspace -- --nocapture
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 2: TypeScript — typecheck, build
+  # ─────────────────────────────────────────────────────────────────
+  ui:
+    name: UI (tsc strict · vite build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-ui
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: src-ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript strict typecheck
+        run: npx tsc --noEmit
+
+      - name: Vite production build
+        run: npm run build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kage-ui-dist
+          path: src-ui/dist/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 3: Audit integrity check (tamper-evident hash chain)
+  # ─────────────────────────────────────────────────────────────────
+  audit-integrity:
+    name: Audit chain integrity (kage-storage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run kage-storage tests (hash chain)
+        run: cargo test -p kage-storage -- --nocapture
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 4: Policy engine tests
+  # ─────────────────────────────────────────────────────────────────
+  policy:
+    name: Policy engine (kage-core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-policy-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run kage-core tests (policy + sanitizer + bus)
+        run: cargo test -p kage-core -- --nocapture
