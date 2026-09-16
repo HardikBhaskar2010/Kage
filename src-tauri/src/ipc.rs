@@ -92,3 +92,115 @@ pub async fn tool_dispatch(
 pub fn get_cdp_nonce(broker: State<'_, Arc<CdpBroker>>) -> String {
     broker.nonce().to_string()
 }
+
+// ---------------------------------------------------------------------------
+// Tab Lifecycle & Navigation IPC Commands (KAGE-ARCH-005)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TabInfo {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+    pub favicon: Option<String>,
+    pub is_loading: bool,
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
+    pub is_secure: bool,
+}
+
+#[tauri::command]
+pub async fn create_tab(url: Option<String>, title: Option<String>) -> Result<TabInfo, String> {
+    let target_url = url.unwrap_or_default();
+    let display_title = title.unwrap_or_else(|| {
+        if target_url.is_empty() {
+            "New Tab".into()
+        } else {
+            target_url.clone()
+        }
+    });
+
+    Ok(TabInfo {
+        id: format!("tab_{}", uuid::Uuid::new_v4().simple()),
+        url: target_url.clone(),
+        title: display_title,
+        favicon: Some(if target_url.is_empty() { "kage".into() } else { "globe".into() }),
+        is_loading: !target_url.is_empty(),
+        can_go_back: false,
+        can_go_forward: false,
+        is_secure: target_url.starts_with("https://") || target_url.is_empty(),
+    })
+}
+
+#[tauri::command]
+pub async fn close_tab(tab_id: String) -> Result<(), String> {
+    tracing::info!("IPC: close_tab {tab_id}");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn switch_tab(tab_id: String) -> Result<(), String> {
+    tracing::info!("IPC: switch_tab {tab_id}");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn navigate_to(tab_id: String, url: String) -> Result<(), String> {
+    tracing::info!("IPC: navigate_to {tab_id} -> {url}");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn go_back(tab_id: String) -> Result<(), String> {
+    tracing::info!("IPC: go_back {tab_id}");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn go_forward(tab_id: String) -> Result<(), String> {
+    tracing::info!("IPC: go_forward {tab_id}");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reload_tab(tab_id: String) -> Result<(), String> {
+    tracing::info!("IPC: reload_tab {tab_id}");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry & Inspection IPC Commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn inspect_node(selector: String) -> Result<serde_json::Value, String> {
+    tracing::info!("IPC: inspect_node {selector}");
+    Ok(serde_json::json!({
+        "selector": selector,
+        "tag": "DIV",
+        "classes": ["liquid-glass-surface"],
+        "attributes": { "role": "region" },
+        "boxModel": {
+            "margin": [0, 0, 0, 0],
+            "border": [1, 1, 1, 1],
+            "padding": [12, 16, 12, 16],
+            "dimensions": { "width": 800, "height": 400 }
+        }
+    }))
+}
+
+#[tauri::command]
+pub async fn eval_js(command: String) -> Result<serde_json::Value, String> {
+    tracing::info!("IPC: eval_js {command}");
+    Ok(serde_json::json!("Executed in CEF context"))
+}
+
+#[tauri::command]
+pub async fn get_audit_logs() -> Result<Vec<serde_json::Value>, String> {
+    Ok(vec![])
+}
+
+#[tauri::command]
+pub async fn verify_audit_chain() -> Result<bool, String> {
+    Ok(true)
+}

@@ -1,0 +1,311 @@
+.network-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--color-surface-1);
+  font-family: var(--font-data);
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+/* ─── Toolbar ─────────────────────────────────────────────────────── */
+.net-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(30, 8, 18, 0.7);
+  border-bottom: 1px solid var(--color-border-subtle);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.net-toolbar__filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.net-filter-btn {
+  padding: 3px 8px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 160ms var(--ease-emil-out), color 160ms var(--ease-emil-out);
+}
+
+.net-filter-btn:hover {
+  background: rgba(218, 98, 125, 0.15);
+  color: var(--color-text-primary);
+}
+
+.net-filter-btn--active {
+  background: rgba(218, 98, 125, 0.25);
+  border-color: rgba(249, 219, 189, 0.25);
+  color: #ffffff;
+}
+
+.net-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.net-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(43, 14, 26, 0.6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 3px 8px;
+  height: 24px;
+}
+
+.net-search-icon {
+  color: var(--color-text-muted);
+}
+
+.net-search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.72rem;
+  color: #ffffff;
+  width: 120px;
+  font-family: var(--font-data);
+}
+
+.net-search-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.net-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 160ms, background 160ms;
+}
+
+.net-tool-btn:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* ─── Body & Split Table ─────────────────────────────────────────── */
+.net-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.net-table-wrap {
+  flex: 1;
+  overflow-y: auto;
+  transition: flex 200ms var(--ease-emil-out);
+}
+
+.net-table-wrap--split {
+  flex: 0 0 60%;
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.net-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  text-align: left;
+}
+
+.net-table th {
+  position: sticky;
+  top: 0;
+  background: rgba(25, 6, 14, 0.95);
+  padding: 6px 10px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--color-border-subtle);
+  user-select: none;
+}
+
+.net-row {
+  border-bottom: 1px solid rgba(249, 219, 189, 0.05);
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.net-row:hover {
+  background: rgba(218, 98, 125, 0.1);
+}
+
+.net-row--selected {
+  background: rgba(218, 98, 125, 0.22);
+}
+
+.net-row td {
+  padding: 5px 10px;
+  vertical-align: middle;
+}
+
+/* ─── Status Badges ──────────────────────────────────────────────── */
+.net-status-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.net-status--2xx { color: #34d399; background: rgba(16, 185, 129, 0.15); }
+.net-status--3xx { color: #fbbf24; background: rgba(245, 158, 11, 0.15); }
+.net-status--4xx { color: #f87171; background: rgba(239, 68, 68, 0.15); }
+.net-status--5xx { color: #f43f5e; background: rgba(225, 29, 72, 0.2); }
+
+.net-method {
+  font-weight: 600;
+  color: var(--color-accent-peach);
+  font-size: 0.65rem;
+}
+
+.net-name {
+  max-width: 220px;
+}
+
+.net-name-primary {
+  display: block;
+  font-weight: 500;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.net-domain {
+  display: block;
+  font-size: 0.62rem;
+  color: var(--color-text-muted);
+}
+
+.net-type,
+.net-size {
+  color: var(--color-text-secondary);
+}
+
+/* ─── Waterfall Bar ──────────────────────────────────────────────── */
+.net-waterfall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.net-waterfall-bar {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--color-accent-peach) 0%, var(--color-accent-rose) 100%);
+  min-width: 4px;
+}
+
+.net-waterfall-time {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+}
+
+/* ─── Request Detail Drawer ───────────────────────────────────────── */
+.net-detail {
+  flex: 0 0 40%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 7, 16, 0.85);
+  overflow-y: auto;
+}
+
+.net-detail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: rgba(35, 10, 22, 0.7);
+}
+
+.net-detail__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.net-detail__close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  transition: color 160ms, background 160ms;
+}
+
+.net-detail__close:hover {
+  color: #ffffff;
+  background: rgba(218, 98, 125, 0.2);
+}
+
+.net-detail__content {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.net-detail__section h4 {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-accent-peach);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.net-kv {
+  display: flex;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  gap: 6px;
+  word-break: break-all;
+}
+
+.net-k {
+  color: var(--color-text-muted);
+  min-width: 100px;
+}
+
+.net-v {
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.net-preview {
+  background: rgba(15, 3, 9, 0.8);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  font-size: 0.68rem;
+  color: #93c5fd;
+  overflow-x: auto;
+  max-height: 140px;
+}

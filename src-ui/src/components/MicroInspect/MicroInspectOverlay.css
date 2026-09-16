@@ -1,0 +1,177 @@
+.micro-inspect-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ─── Blueprint Highlight Box ─────────────────────────────────────── */
+.micro-inspect-box {
+  position: fixed;
+  background: rgba(96, 165, 250, 0.15);
+  border: 1px dashed rgba(96, 165, 250, 0.85);
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.35);
+  pointer-events: none;
+  transition: all 60ms ease-out;
+}
+
+.micro-inspect-badge {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  transform: translateY(-4px);
+  background: #1e3a8a;
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-data);
+  font-size: 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.mib-tag { font-weight: 700; color: #93c5fd; }
+.mib-class { color: #fde047; }
+.mib-dims { color: rgba(255, 255, 255, 0.65); font-size: 0.6rem; }
+
+/* ─── Pinned Card ─────────────────────────────────────────────────── */
+.micro-inspect-card {
+  position: fixed;
+  width: 280px;
+  background: rgba(30, 8, 18, 0.95);
+  border: 1px solid rgba(249, 219, 189, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(218, 98, 125, 0.25);
+  pointer-events: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: var(--font-data);
+  z-index: 10000;
+}
+
+.mic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-bottom: 6px;
+}
+
+.mic-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-accent-peach);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.mic-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.mic-close-btn:hover {
+  color: #ffffff;
+}
+
+.mic-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.68rem;
+}
+
+.mic-kv {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-text-secondary);
+}
+
+.mic-kv strong {
+  color: #ffffff;
+}
+
+.mic-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.mic-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: background 160ms, transform 160ms;
+}
+
+.mic-btn--ai {
+  background: linear-gradient(135deg, var(--color-accent-rose) 0%, var(--color-accent-magenta) 100%);
+  color: #ffffff;
+}
+
+.mic-btn--ai:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(218, 98, 125, 0.4);
+}
+
+.mic-btn--copy {
+  background: rgba(249, 219, 189, 0.1);
+  border: 1px solid rgba(249, 219, 189, 0.2);
+  color: var(--color-accent-peach);
+}
+
+.mic-btn--copy:hover {
+  background: rgba(249, 219, 189, 0.18);
+}
+
+/* ─── Floating Top Exit Bar ───────────────────────────────────────── */
+.micro-inspect-exit-bar {
+  position: fixed;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 8, 18, 0.9);
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  border-radius: var(--radius-full);
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.72rem;
+  color: #ffffff;
+  pointer-events: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.mib-exit-btn {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.mib-exit-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+}

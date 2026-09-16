@@ -51,6 +51,10 @@ export const IconSidebar: React.FC<IconSidebarProps> = ({
       {bottomItems.length > 0 && (
         <div className="icon-sidebar__bottom">
           {bottomItems.map(renderItem)}
+          <div className="icon-sidebar__brand">
+            <span className="icon-sidebar__brand-name">K A G E</span>
+            <span className="icon-sidebar__brand-version">v0.1.0</span>
+          </div>
         </div>
       )}
     </nav>

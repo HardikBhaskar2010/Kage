@@ -1,0 +1,202 @@
+.extensions-page {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--color-bg-base);
+  padding: 36px 40px;
+  color: var(--color-text-primary);
+}
+
+.ext-container {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.ext-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-bottom: 20px;
+}
+
+.ext-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.ext-subtitle {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.ext-install-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-accent-peach);
+  background: rgba(249, 219, 189, 0.12);
+  color: var(--color-accent-peach);
+  cursor: pointer;
+  transition: background 160ms var(--ease-emil-out), transform 160ms var(--ease-emil-out);
+}
+
+.ext-install-btn:hover {
+  background: var(--color-accent-primary);
+  color: #ffffff;
+  border-color: var(--color-accent-primary);
+  transform: translateY(-1px);
+}
+
+.ext-install-btn:active {
+  transform: scale(0.96);
+}
+
+/* ─── Grid ────────────────────────────────────────────────────────── */
+.ext-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.ext-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  background: rgba(30, 8, 18, 0.7);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(16px);
+  transition: border-color 160ms var(--ease-emil-out), transform 160ms var(--ease-emil-out);
+}
+
+.ext-card:hover {
+  border-color: rgba(249, 219, 189, 0.35);
+  transform: translateY(-2px);
+}
+
+.ext-card--enabled {
+  border-color: rgba(218, 98, 125, 0.3);
+  box-shadow: 0 4px 20px rgba(218, 98, 125, 0.1);
+}
+
+.ext-card__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ext-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
+  background: rgba(218, 98, 125, 0.18);
+  color: var(--kage-peach);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ext-card__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.ext-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ext-card__name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.ext-card__version {
+  font-size: 0.65rem;
+  font-family: var(--font-data);
+  color: var(--color-text-muted);
+}
+
+.ext-card__author {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
+/* ─── Spring Toggle Switch ────────────────────────────────────────── */
+.ext-switch {
+  width: 38px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-subtle);
+  background: rgba(43, 14, 26, 0.8);
+  cursor: pointer;
+  position: relative;
+  transition: background 200ms var(--ease-emil-out), border-color 200ms;
+}
+
+.ext-switch--on {
+  background: var(--color-accent-primary);
+  border-color: var(--color-accent-hover);
+}
+
+.ext-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ext-switch--on .ext-switch__thumb {
+  transform: translateX(16px);
+}
+
+.ext-card__desc {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.ext-card__footer {
+  border-top: 1px solid rgba(249, 219, 189, 0.06);
+  padding-top: 10px;
+}
+
+.ext-capabilities {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ext-cap-icon {
+  color: var(--kage-peach);
+}
+
+.ext-cap-chip {
+  font-size: 0.62rem;
+  font-family: var(--font-data);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(249, 219, 189, 0.08);
+  color: var(--color-text-muted);
+}

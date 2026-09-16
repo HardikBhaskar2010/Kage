@@ -29,35 +29,49 @@
   align-items: center;
   flex-shrink: 0;
   height: 100%;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-3);
 }
 
-.app__logo-img {
-  height: 20px;
-  width: auto;
-  object-fit: contain;
+.app__titlebar-kage {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--color-peach);
+  text-shadow: 0 0 12px rgba(218, 98, 125, 0.45);
 }
 
-/* ─── Window controls ─────────────────────────────────────────────── */
+/* ─── Window controls (Minimal Windows style) ───────────────────────── */
 .app__window-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 var(--space-3);
+  height: 100%;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
 
 .wc-btn {
-  width: 12px;
-  height: 12px;
-  border-radius: var(--radius-full);
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-emil-out),
+              color var(--duration-fast) var(--ease-emil-out);
 }
 
-.wc-btn--min   { background: #f4bf4f; }
-.wc-btn--max   { background: #2acc5c; }
-.wc-btn--close { background: #ff5f57; }
+.wc-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-primary);
+}
+
+.wc-btn--close:hover {
+  background: #e81123;
+  color: #FFFFFF;
+}
 
 /* ─── Body ────────────────────────────────────────────────────────── */
 .app__body {
@@ -65,6 +79,7 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 
 /* ─── Content area ───────────────────────────────────────────────── */
@@ -72,8 +87,21 @@
   flex: 1;
   min-width: 0;
   height: 100%;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   position: relative;
+}
+
+.app__viewport-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  transition: flex 260ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .app__webview-placeholder {

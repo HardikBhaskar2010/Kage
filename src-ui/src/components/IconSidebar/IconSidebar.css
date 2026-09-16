@@ -1,8 +1,9 @@
 .icon-sidebar {
   display: flex;
   flex-direction: column;
-  width: var(--icon-sidebar-w);
-  min-width: var(--icon-sidebar-w);
+  width: var(--sidebar-width, 54px);
+  min-width: var(--sidebar-width, 54px);
+  flex-shrink: 0;
   height: 100%;
   background: var(--color-surface-1);
   border-right: 1px solid var(--color-border-subtle);
@@ -17,7 +18,7 @@
   flex-direction: column;
   align-items: center;
   padding: var(--space-2) 0;
-  gap: var(--space-1);
+  gap: 3px;
 }
 
 /* ─── Individual sidebar item ──────────────────────────────────────── */
@@ -28,38 +29,85 @@
   justify-content: center;
   width: 44px;
   height: 44px;
-  padding: var(--space-1);
+  padding: 3px;
   gap: 2px;
   border-radius: var(--radius-md);
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
   position: relative;
-  transition: background var(--duration-fast) var(--ease-smooth),
-              color var(--duration-fast) var(--ease-smooth);
+  transition: background 160ms var(--ease-emil-out),
+              border-color 160ms var(--ease-emil-out),
+              color 160ms var(--ease-emil-out),
+              transform 160ms var(--ease-emil-out);
 }
 
-.sidebar-item::before {
-  /* Active indicator stripe on the left edge */
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 25%;
-  bottom: 25%;
-  width: 2px;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  background: transparent;
-  transition: background var(--duration-fast) var(--ease-smooth);
-}
-
-.sidebar-item:hover {
-  background: rgba(218, 98, 125, 0.1);
+/* Normal State: icon + tiny muted label */
+.sidebar-item .sidebar-item__icon {
   color: var(--color-text-secondary);
+  opacity: 0.75;
+  transition: transform 160ms var(--ease-emil-out), color 160ms var(--ease-emil-out), opacity 160ms var(--ease-emil-out);
+}
+
+.sidebar-item .sidebar-item__label {
+  font-size: 0.58rem;
+  color: var(--color-text-muted);
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40px;
+  line-height: 1;
+  transition: opacity 160ms var(--ease-emil-out), color 160ms var(--ease-emil-out), transform 160ms var(--ease-emil-out);
+}
+
+/* Hover State: expanded label brightness & soft background */
+.sidebar-item:hover:not(.sidebar-item--active) {
+  background: rgba(218, 98, 125, 0.16);
+  border-color: rgba(249, 219, 189, 0.28);
+  color: var(--color-text-primary);
+  transform: translateY(-1px);
+}
+
+.sidebar-item:hover:not(.sidebar-item--active) .sidebar-item__icon {
+  opacity: 1;
+  color: #ffffff;
+  transform: scale(1.12);
+  filter: drop-shadow(0 0 6px rgba(218, 98, 125, 0.4));
+}
+
+.sidebar-item:hover:not(.sidebar-item--active) .sidebar-item__label {
+  opacity: 1;
+  color: var(--kage-peach);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Active State: glowing liquid-glass capsule + icon + label */
+.sidebar-item--active {
+  background: linear-gradient(135deg, rgba(218, 98, 125, 0.45) 0%, rgba(165, 56, 96, 0.70) 100%);
+  border: 1px solid rgba(255, 165, 171, 0.45);
+  color: #FFFFFF;
+  box-shadow: 0 4px 18px rgba(218, 98, 125, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.sidebar-item--active .sidebar-item__icon {
+  color: #FFFFFF;
+  opacity: 1;
+  filter: drop-shadow(0 0 8px rgba(249, 219, 189, 0.6));
+}
+
+.sidebar-item--active .sidebar-item__label {
+  color: #FFFFFF;
+  opacity: 1;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .sidebar-item:active {
-  transform: scale(0.94);
+  transform: scale(0.93);
 }
 
 .sidebar-item:focus-visible {
@@ -67,15 +115,26 @@
   outline-offset: 2px;
 }
 
-/* Active state */
-.sidebar-item--active {
-  background: var(--color-accent-active);
-  color: var(--color-accent-primary);
+/* ─── Brand Footer ─────────────────────────────────────────────────── */
+.icon-sidebar__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) 0 var(--space-1);
 }
 
-.sidebar-item--active::before {
-  background: var(--color-accent-primary);
-  box-shadow: var(--glass-glow-sm);
+.icon-sidebar__brand-name {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--color-text-secondary);
+}
+
+.icon-sidebar__brand-version {
+  font-size: 8px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
 }
 
 /* ─── Icon & label ─────────────────────────────────────────────────── */

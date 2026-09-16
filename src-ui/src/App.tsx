@@ -1,165 +1,237 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import "./App.css";
 
+import {
+  Home,
+  Sparkles,
+  ScanEye,
+  Layers,
+  Network,
+  Activity,
+  Terminal,
+  Database,
+  ShieldCheck,
+  Blocks,
+  Settings,
+  Minus,
+  Square,
+  X,
+} from "lucide-react";
+
+import { BrowserProvider, useBrowser } from "./context/BrowserContext";
+import type { ActiveTool } from "./context/BrowserContext";
 import { TabStrip } from "./components/TabStrip/TabStrip";
-import type { Tab } from "./components/TabStrip/TabStrip";
 import { Omnibox } from "./components/Omnibox/Omnibox";
 import { IconSidebar } from "./components/IconSidebar/IconSidebar";
 import type { SidebarItem } from "./components/IconSidebar/IconSidebar";
 import { AISidebar } from "./components/AISidebar/AISidebar";
 import { NewTab } from "./components/NewTab/NewTab";
+import { BrowserWebview } from "./components/BrowserWebview/BrowserWebview";
+import { DevToolsDrawer } from "./components/DevTools/DevToolsDrawer";
+import { MicroInspectOverlay } from "./components/MicroInspect/MicroInspectOverlay";
+import { DownloadsPopover } from "./components/Downloads/DownloadsPopover";
+import { ExtensionsPage } from "./components/Extensions/ExtensionsPage";
+import { SettingsPage } from "./components/Settings/SettingsPage";
 
-// ─── Sidebar icons ─────────────────────────────────────────────────────────
-
-const HomeIcon    = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 6.5L8 2l6 4.5V14H11v-3.5H5V14H2V6.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></svg>;
-const InspectIcon = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2h12v12H2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M5 5h6M5 8h4M5 11h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>;
-const DomIcon     = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3h10v2H3zM5 7h6v2H5zM7 11h2v2H7z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/></svg>;
-const NetworkIcon = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.2"/><path d="M8 2.5v11M2.5 8h11M3.5 5A9 9 0 0 1 12.5 5M3.5 11a9 9 0 0 0 9 0" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>;
-const PerfIcon    = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 12L5.5 7 8 9.5 11 5.5 14 12H2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></svg>;
-const TestsIcon   = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 2h4l2 5H4L6 2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M4 7l-2 7h12l-2-7" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M6 11l1.5 1.5L11 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
-const ConsoleIcon = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12v8H2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M5 7l2 1.5L5 10M9 10h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
-const StorageIcon = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="2" y="7" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="2" y="11" width="12" height="3" rx="1" stroke="currentColor" strokeWidth="1.2"/></svg>;
-const SecurityIcon= () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L3 4v4c0 2.8 2.1 5.4 5 6 2.9-.6 5-3.2 5-6V4L8 2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M5.5 8l2 2L11 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
-const AIIcon      = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2l1.5 4.5H14L10.5 9 12 13.5 8 11 4 13.5 5.5 9 2 6.5h4.5L8 2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/></svg>;
-const ExtIcon     = () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 2h4v2h2a1 1 0 0 1 1 1v2h-2V5.5H5V7H3V5a1 1 0 0 1 1-1h2V2zM3 9h2v4.5h6V9h2v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/></svg>;
-const WorkspaceIcon=()=> <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/></svg>;
-const SettingsIcon= () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.2"/><path d="M8 2v1.5M8 12.5V14M2 8h1.5M12.5 8H14M3.6 3.6l1 1M11.4 11.4l1 1M12.4 3.6l-1 1M4.6 11.4l-1 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>;
-
+// ─── Sidebar Items with Crisp Lucide Icons ────────────────────────────
 const SIDEBAR_ITEMS: SidebarItem[] = [
-  { id: "home",      icon: <HomeIcon />,     label: "Home"      },
-  { id: "inspect",   icon: <InspectIcon />,  label: "Inspect"   },
-  { id: "dom",       icon: <DomIcon />,      label: "DOM"       },
-  { id: "network",   icon: <NetworkIcon />,  label: "Network"   },
-  { id: "perf",      icon: <PerfIcon />,     label: "Perf"      },
-  { id: "tests",     icon: <TestsIcon />,    label: "Tests"     },
-  { id: "console",   icon: <ConsoleIcon />,  label: "Console"   },
-  { id: "storage",   icon: <StorageIcon />,  label: "Storage"   },
-  { id: "security",  icon: <SecurityIcon />, label: "Security"  },
-  { id: "ai",        icon: <AIIcon />,       label: "AI"        },
-  { id: "ext",       icon: <ExtIcon />,      label: "Extensions"},
+  { id: "home",        icon: <Home size={18} strokeWidth={1.8} />,        label: "Home" },
+  { id: "ai",          icon: <Sparkles size={18} strokeWidth={1.8} />,    label: "AI" },
+  { id: "inspect",     icon: <ScanEye size={18} strokeWidth={1.8} />,     label: "Inspect" },
+  { id: "dom",         icon: <Layers size={18} strokeWidth={1.8} />,      label: "DOM" },
+  { id: "network",     icon: <Network size={18} strokeWidth={1.8} />,     label: "Network" },
+  { id: "performance", icon: <Activity size={18} strokeWidth={1.8} />,    label: "Performance" },
+  { id: "console",     icon: <Terminal size={18} strokeWidth={1.8} />,    label: "Console" },
+  { id: "storage",     icon: <Database size={18} strokeWidth={1.8} />,    label: "Storage" },
+  { id: "security",    icon: <ShieldCheck size={18} strokeWidth={1.8} />, label: "Security" },
+  { id: "extensions",  icon: <Blocks size={18} strokeWidth={1.8} />,      label: "Extensions" },
 ];
 
 const SIDEBAR_BOTTOM: SidebarItem[] = [
-  { id: "workspaces",icon: <WorkspaceIcon />,label: "Workspaces"},
-  { id: "settings",  icon: <SettingsIcon />, label: "Settings"  },
+  { id: "settings",    icon: <Settings size={18} strokeWidth={1.8} />,    label: "Settings" },
 ];
 
-let tabCounter = 3;
+const AppInner: React.FC = () => {
+  const {
+    tabs,
+    activeTabId,
+    activeTab,
+    createTab,
+    closeTab,
+    switchTab,
+    navigate,
+    goBack,
+    goForward,
+    refresh,
 
-const INITIAL_TABS: Tab[] = [
-  { id: "tab-1", title: "New Tab",            isActive: true  },
-  { id: "tab-2", title: "Vercel – Build Faster", isActive: false },
-  { id: "tab-3", title: "GitHub",             isActive: false },
-];
+    activeTool,
+    setActiveTool,
+    aiOpen,
+    setAiOpen,
+    setDevToolsOpen,
+    setInspectMode,
 
-export const App: React.FC = () => {
-  const [tabs, setTabs]             = useState<Tab[]>(INITIAL_TABS);
-  const [activeTab, setActiveTab]   = useState<string>("tab-1");
-  const [url, setUrl]               = useState("");
-  const [sidebarActive, setSidebarActive] = useState("home");
-  const [aiOpen, setAiOpen]         = useState(false);
+    isBookmarked,
+    toggleBookmark,
 
-  // ─── Tab management ──────────────────────────────────────────────
-  const selectTab = useCallback((id: string) => {
-    setTabs((prev) => prev.map((t) => ({ ...t, isActive: t.id === id })));
-    setActiveTab(id);
-  }, []);
+    downloadsOpen,
+    setDownloadsOpen,
+  } = useBrowser();
 
-  const closeTab = useCallback((id: string) => {
-    setTabs((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      if (next.length === 0) return [{ id: "tab-new", title: "New Tab", isActive: true }];
-      if (id === activeTab) {
-        const lastIdx = Math.max(0, prev.findIndex((t) => t.id === id) - 1);
-        next[Math.min(lastIdx, next.length - 1)].isActive = true;
-        setActiveTab(next[Math.min(lastIdx, next.length - 1)].id);
-      }
-      return next;
-    });
-  }, [activeTab]);
+  const [inputUrl, setInputUrl] = useState(activeTab?.url || "");
 
-  const newTab = useCallback(() => {
-    const tab = { id: `tab-${++tabCounter}`, title: "New Tab", isActive: true };
-    setTabs((prev) => [...prev.map((t) => ({ ...t, isActive: false })), tab]);
-    setActiveTab(tab.id);
-    setUrl("");
-  }, []);
+  // Sync input bar with active tab url
+  useEffect(() => {
+    setInputUrl(activeTab?.url || "");
+  }, [activeTab?.url]);
 
-  // ─── Navigation ───────────────────────────────────────────────────
-  const navigate = useCallback((dest: string) => {
-    setUrl(dest);
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === activeTab ? { ...t, title: dest.replace(/^https?:\/\//, "").split("/")[0] } : t
-      )
-    );
-  }, [activeTab]);
-
-  // ─── Sidebar toggle for AI ────────────────────────────────────────
   const handleSidebarSelect = (id: string) => {
-    setSidebarActive(id);
-    if (id === "ai") setAiOpen((prev) => !prev);
+    if (id === "ai") {
+      setAiOpen(!aiOpen);
+      setActiveTool(aiOpen ? "home" : "ai");
+      return;
+    }
+
+    if (id === "home") {
+      navigate("");
+      setActiveTool("home");
+      setDevToolsOpen(false);
+      return;
+    }
+
+    if (id === "inspect") {
+      setInspectMode(true);
+      setActiveTool("inspect");
+      return;
+    }
+
+    if (
+      id === "dom" ||
+      id === "network" ||
+      id === "performance" ||
+      id === "console" ||
+      id === "storage" ||
+      id === "security"
+    ) {
+      setActiveTool(id as ActiveTool);
+      setDevToolsOpen(true);
+      return;
+    }
+
+    if (id === "extensions" || id === "settings") {
+      setActiveTool(id as ActiveTool);
+      setDevToolsOpen(false);
+      return;
+    }
   };
 
-  const isNewTab = url === "" && tabs.find((t) => t.id === activeTab)?.title === "New Tab";
+  const isNewTab = !activeTab?.url && activeTool !== "settings" && activeTool !== "extensions";
 
   return (
     <div className="app" role="application" aria-label="KAGE Developer Browser">
-      {/* ── Top bar: logo + tabs ──────────────────────────────────── */}
+      {/* ── Top Bar: Logo + Tabs + Window Controls ───────────────── */}
       <header className="app__titlebar glass-panel" role="banner">
-        <div className="app__titlebar-logo" aria-label="KAGE">
-          <img src="/Logo.png" alt="KAGE" height={20} className="app__logo-img" />
+        <div className="app__titlebar-logo" aria-label="KAGE" onClick={() => navigate("")}>
+          <span className="app__titlebar-kage">K A G E</span>
         </div>
         <TabStrip
-          tabs={tabs}
-          onTabSelect={selectTab}
+          tabs={tabs.map((t) => ({
+            id: t.id,
+            title: t.title,
+            isActive: t.id === activeTabId,
+            favicon: t.favicon,
+            isLoading: t.isLoading,
+          }))}
+          onTabSelect={switchTab}
           onTabClose={closeTab}
-          onNewTab={newTab}
+          onNewTab={() => createTab()}
         />
-        {/* Window controls placeholder (Tauri handles native on Windows) */}
-        <div className="app__window-controls" aria-hidden="true">
-          <span className="wc-btn wc-btn--min" />
-          <span className="wc-btn wc-btn--max" />
-          <span className="wc-btn wc-btn--close" />
+        {/* Minimal Windows Window Controls */}
+        <div className="app__window-controls" aria-label="Window controls">
+          <button type="button" className="wc-btn wc-btn--minimize" aria-label="Minimize">
+            <Minus size={11} strokeWidth={2} />
+          </button>
+          <button type="button" className="wc-btn wc-btn--maximize" aria-label="Maximize">
+            <Square size={10} strokeWidth={1.8} />
+          </button>
+          <button type="button" className="wc-btn wc-btn--close" aria-label="Close">
+            <X size={12} strokeWidth={2} />
+          </button>
         </div>
       </header>
 
-      {/* ── Omnibox ──────────────────────────────────────────────── */}
+      {/* ── Omnibox Row with Modern Nav & Action Cluster ─────────── */}
       <Omnibox
-        url={url}
-        onUrlChange={setUrl}
+        url={inputUrl}
+        onUrlChange={setInputUrl}
         onNavigate={navigate}
-        isSecure={url.startsWith("https")}
-        onRefresh={() => navigate(url)}
+        isSecure={activeTab?.isSecure}
+        onRefresh={refresh}
+        onBack={goBack}
+        onForward={goForward}
+        canGoBack={activeTab?.canGoBack}
+        canGoForward={activeTab?.canGoForward}
+        onToggleAi={() => setAiOpen(!aiOpen)}
+        onFavourite={() => toggleBookmark(inputUrl, activeTab?.title)}
+        isStarred={isBookmarked(inputUrl)}
+        onToggleDownloads={() => setDownloadsOpen(!downloadsOpen)}
+        onToggleExtensions={() => setActiveTool(activeTool === "extensions" ? "home" : "extensions")}
       />
 
-      {/* ── Main body: sidebar + content + AI ────────────────────── */}
+      {/* ── Main Body: Slender Icon Dock + KAGE AI Panel + Viewport ── */}
       <div className="app__body">
         <IconSidebar
           items={SIDEBAR_ITEMS}
           bottomItems={SIDEBAR_BOTTOM}
           onSelect={handleSidebarSelect}
-          activeId={sidebarActive}
+          activeId={activeTool}
         />
 
-        {/* Browser viewport / content area */}
-        <main className="app__content" role="main" aria-label="Browser viewport">
-          {isNewTab ? (
-            <NewTab onNavigate={navigate} />
-          ) : (
-            <div className="app__webview-placeholder kage-bg">
-              <p className="app__webview-url">{url || "about:blank"}</p>
-              <p className="app__webview-note">CEF WebView renders here (Chunk 7)</p>
-            </div>
-          )}
-        </main>
-
+        {/* KAGE AI Panel (Docked beside IconSidebar) */}
         <AISidebar
           isOpen={aiOpen}
-          onClose={() => setAiOpen(false)}
+          onClose={() => {
+            setAiOpen(false);
+            if (activeTool === "ai") setActiveTool("home");
+          }}
         />
+
+        {/* Main Viewport Stage */}
+        <main className="app__content" role="main" aria-label="Browser viewport">
+          <div className="app__viewport-stage">
+            {activeTool === "settings" ? (
+              <SettingsPage />
+            ) : activeTool === "extensions" ? (
+              <ExtensionsPage />
+            ) : isNewTab ? (
+              <NewTab
+                onNavigate={navigate}
+                onToggleAi={() => setAiOpen(!aiOpen)}
+              />
+            ) : (
+              <BrowserWebview url={activeTab?.url || ""} />
+            )}
+          </div>
+
+          {/* Collapsible Bottom DevTools Drawer (Flow element, shrinks viewport naturally) */}
+          <DevToolsDrawer />
+        </main>
       </div>
+
+      {/* Floating Blueprint Micro-Inspect Overlay */}
+      <MicroInspectOverlay />
+
+      {/* Floating Downloads Popover */}
+      <DownloadsPopover />
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <BrowserProvider>
+      <AppInner />
+    </BrowserProvider>
   );
 };
 

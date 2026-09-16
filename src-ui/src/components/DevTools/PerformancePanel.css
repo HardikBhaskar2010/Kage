@@ -1,0 +1,130 @@
+.perf-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--color-surface-1);
+  font-family: var(--font-data);
+  color: var(--color-text-primary);
+  padding: 12px;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+/* ─── Metric Cards ─────────────────────────────────────────────────── */
+.perf-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.perf-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(30, 8, 18, 0.7);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(12px);
+  position: relative;
+  transition: transform 160ms var(--ease-emil-out), border-color 160ms;
+}
+
+.perf-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(249, 219, 189, 0.3);
+}
+
+.perf-card__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: rgba(218, 98, 125, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent-peach);
+  flex-shrink: 0;
+}
+
+.perf-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.perf-card__label {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.perf-card__val {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.perf-card__val small {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.perf-card__val--fps {
+  color: #34d399;
+}
+
+.perf-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: var(--radius-full);
+}
+
+.perf-badge--good {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+/* ─── Chart Section ───────────────────────────────────────────────── */
+.perf-chart-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(25, 6, 14, 0.7);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+}
+
+.perf-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.perf-chart-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-accent-peach);
+}
+
+.perf-chart-sub {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+}
+
+.perf-canvas {
+  width: 100%;
+  height: 130px;
+  border-radius: var(--radius-sm);
+  background: rgba(15, 3, 9, 0.9);
+}

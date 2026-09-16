@@ -3,7 +3,7 @@
   align-items: center;
   height: var(--tab-height);
   padding: 0 var(--space-2);
-  gap: 2px;
+  gap: var(--space-2);
   overflow-x: auto;
   overflow-y: hidden;
   flex: 1;
@@ -15,46 +15,45 @@
   display: none;
 }
 
-/* ─── Individual Tab ─────────────────────────────────────────────── */
+/* ─── Individual Tab (Liquid Glass Pill) ─────────────────────────── */
 .tab {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   height: 28px;
   padding: 0 var(--space-2) 0 var(--space-3);
-  min-width: 80px;
+  min-width: 90px;
   max-width: 200px;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
   cursor: pointer;
   position: relative;
   flex-shrink: 0;
   color: var(--color-text-secondary);
   background: transparent;
-  transition: background var(--duration-fast) var(--ease-smooth),
-              color var(--duration-fast) var(--ease-smooth);
+  transition: background var(--duration-fast) var(--ease-emil-out),
+              border-color var(--duration-fast) var(--ease-emil-out),
+              color var(--duration-fast) var(--ease-emil-out),
+              transform var(--duration-press) var(--ease-emil-out);
   user-select: none;
 }
 
-.tab:hover {
-  background: rgba(122, 58, 82, 0.25);
+.tab:hover:not(.tab--active) {
+  background: rgba(218, 98, 125, 0.12);
+  border-color: rgba(218, 98, 125, 0.2);
   color: var(--color-text-primary);
+  transform: translateY(-1px);
+}
+
+.tab:active {
+  transform: scale(0.97);
 }
 
 .tab--active {
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
-  box-shadow: inset 0 1px 0 rgba(218, 98, 125, 0.4);
-}
-
-.tab--active::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--color-accent-primary);
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: linear-gradient(135deg, rgba(218, 98, 125, 0.40) 0%, rgba(165, 56, 96, 0.65) 100%);
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 165, 171, 0.35);
+  box-shadow: 0 4px 16px rgba(218, 98, 125, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 /* ─── Tab parts ──────────────────────────────────────────────────── */
@@ -98,20 +97,27 @@
   cursor: pointer;
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity var(--duration-fast),
-              background var(--duration-fast),
-              color var(--duration-fast);
+  transition: opacity var(--duration-fast) var(--ease-emil-out),
+              background var(--duration-fast) var(--ease-emil-out),
+              color var(--duration-fast) var(--ease-emil-out),
+              transform 100ms var(--ease-emil-out);
   padding: 0;
 }
 
 .tab:hover .tab__close,
 .tab--active .tab__close {
-  opacity: 1;
+  opacity: 0.75;
 }
 
 .tab__close:hover {
-  background: rgba(218, 98, 125, 0.25);
-  color: var(--color-accent-hover);
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  transform: rotate(90deg) scale(1.1);
+  opacity: 1 !important;
+}
+
+.tab__close:active {
+  transform: scale(0.9) rotate(90deg);
 }
 
 /* ─── New Tab button ──────────────────────────────────────────────── */
@@ -127,10 +133,17 @@
   color: var(--color-text-secondary);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--duration-fast), color var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-emil-out),
+              color var(--duration-fast) var(--ease-emil-out),
+              transform 100ms var(--ease-emil-out);
 }
 
 .tab-new:hover {
-  background: rgba(122, 58, 82, 0.3);
-  color: var(--color-accent-hover);
+  background: rgba(218, 98, 125, 0.22);
+  color: var(--kage-peach);
+  transform: rotate(90deg) scale(1.1);
+}
+
+.tab-new:active {
+  transform: scale(0.92) rotate(90deg);
 }

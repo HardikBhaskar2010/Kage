@@ -1,5 +1,19 @@
 import React, { useState, useRef, useEffect, useId } from "react";
 import "./AISidebar.css";
+import {
+  X,
+  ChevronRight,
+  ChevronDown,
+  Paperclip,
+  SendHorizontal,
+  BarChart3,
+  Crosshair,
+  Bug,
+  Zap,
+  FlaskConical,
+  MessageSquare,
+} from "lucide-react";
+import { aiProviderRegistry } from "../../services/aiProviderDiscovery";
 
 interface Message {
   id: string;
@@ -15,80 +29,77 @@ interface AISidebarProps {
   maxSteps?: number;
 }
 
-const SendIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-    <path d="M14 8L2 2l3 6-3 6 12-6z" fill="currentColor"/>
-  </svg>
-);
-
-const CloseIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-    <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-  </svg>
-);
-
-const KageAvatar = () => (
-  <div className="ai-avatar" aria-hidden="true">
-    <img
-      src="/Logo.png"
-      alt=""
-      width={28}
-      height={28}
-      className="ai-avatar__img"
-    />
-  </div>
-);
+const ACTION_CARDS = [
+  {
+    id: "analyze",
+    icon: <BarChart3 size={18} strokeWidth={1.8} />,
+    title: "Analyze this page",
+    desc: "Get a full performance, SEO and accessibility report",
+  },
+  {
+    id: "explain",
+    icon: <Crosshair size={18} strokeWidth={1.8} />,
+    title: "Explain selected element",
+    desc: "Understand how it works",
+  },
+  {
+    id: "issues",
+    icon: <Bug size={18} strokeWidth={1.8} />,
+    title: "Find issues",
+    desc: "Scan for common problems",
+  },
+  {
+    id: "test",
+    icon: <FlaskConical size={18} strokeWidth={1.8} />,
+    title: "Generate test",
+    desc: "Create a Playwright test from this page",
+  },
+];
 
 export const AISidebar: React.FC<AISidebarProps> = ({
   isOpen,
   onClose,
-  stepCount = 0,
-  maxSteps = 10,
 }) => {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      text: "Hi, I'm Kage AI.\nI can help you with:",
-      timestamp: new Date(),
-    },
-  ]);
+  const [model, setModel] = useState("GPT-4o");
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputId = useId();
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (isOpen && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  }, [messages, isOpen]);
 
-  const handleSend = () => {
-    const trimmed = input.trim();
-    if (!trimmed || isThinking) return;
+  const handleSend = (textToSend?: string) => {
+    const text = (textToSend ?? input).trim();
+    if (!text || isThinking) return;
 
     const userMsg: Message = {
       id: `msg-${Date.now()}`,
       role: "user",
-      text: trimmed,
+      text,
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, userMsg]);
-    setInput("");
+    if (!textToSend) setInput("");
     setIsThinking(true);
 
-    // Stub: real dispatch goes through ToolBus IPC
     setTimeout(() => {
       setMessages((prev) => [
         ...prev,
         {
           id: `msg-${Date.now()}-ai`,
           role: "assistant",
-          text: "Analysing page context… (Tool Bus connected in Chunk 7)",
+          text: `Analyzing context for "${text}" with ${model}… Tool Bus dispatcher ready.`,
           timestamp: new Date(),
         },
       ]);
       setIsThinking(false);
-    }, 900);
+    }, 850);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -98,138 +109,189 @@ export const AISidebar: React.FC<AISidebarProps> = ({
     }
   };
 
-  const stepFraction = stepCount / maxSteps;
-  const stepPct = Math.round(stepFraction * 100);
-
   return (
     <aside
-      className={`ai-sidebar glass-panel ${isOpen ? "ai-sidebar--open" : ""}`}
-      aria-label="AI Developer Assistant"
+      className={`ai-sidebar ${isOpen ? "ai-sidebar--open" : ""}`}
+      aria-label="KAGE AI Developer Assistant"
       aria-hidden={!isOpen}
       id="ai-sidebar"
     >
-      {/* Header */}
+      {/* ── Header ────────────────────────────────────────────── */}
       <div className="ai-sidebar__header">
-        <div className="ai-sidebar__title-row">
-          <KageAvatar />
-          <div className="ai-sidebar__title-text">
-            <span className="ai-sidebar__title">AI Developer Assistant</span>
-            <span className="ai-sidebar__subtitle">Analyze. Debug. Optimize.</span>
-          </div>
+        <div className="ai-sidebar__header-title">
+          <span className="ai-sidebar__brand-name">K A G E   A I</span>
         </div>
         <button
-          className="ai-sidebar__close"
+          className="ai-sidebar__close-btn"
           onClick={onClose}
-          aria-label="Close AI sidebar"
+          aria-label="Close AI Sidebar"
           id="btn-ai-close"
         >
-          <CloseIcon />
+          <X size={15} strokeWidth={2} />
         </button>
       </div>
 
-      {/* Step counter — bounded agent execution tracker */}
-      {stepCount > 0 && (
-        <div className="ai-sidebar__steps" role="status" aria-label={`Agent step ${stepCount} of ${maxSteps}`}>
-          <div className="ai-steps__label">
-            <span>Agent steps</span>
-            <span className={stepPct > 80 ? "ai-steps__count--warn" : ""}>{stepCount}/{maxSteps}</span>
+      <div className="ai-sidebar__scroll-body">
+        {/* ── Copilot Profile Card ─────────────────────────────── */}
+        <div className="ai-copilot-card">
+          <div className="ai-copilot-card__avatar-wrap">
+            <img src="/avatar.png" alt="Kage AI Avatar" className="ai-copilot-card__avatar" />
+            <span className="ai-copilot-card__status-dot" title="Online" />
           </div>
-          <div className="ai-steps__bar" role="progressbar" aria-valuenow={stepCount} aria-valuemin={0} aria-valuemax={maxSteps}>
-            <div
-              className="ai-steps__fill"
-              style={{ width: `${stepPct}%` }}
-            />
+          <div className="ai-copilot-card__meta">
+            <h3 className="ai-copilot-card__title">Your Developer Copilot for the Web.</h3>
+            <p className="ai-copilot-card__subtitle">Understand. Debug. Optimize.</p>
           </div>
         </div>
-      )}
 
-      {/* Quick actions */}
-      <div className="ai-sidebar__quick-actions" role="group" aria-label="Quick AI actions">
-        {["Analyze Page", "Explain", "Generate"].map((action) => (
-          <button
-            key={action}
-            className="ai-quick-btn"
-            id={`btn-ai-${action.toLowerCase().replace(" ", "-")}`}
-            aria-label={action}
-          >
-            {action}
-          </button>
-        ))}
-      </div>
+        {/* ── Quick Action Pill Buttons ────────────────────────── */}
+        <div className="ai-sidebar__pills" role="group" aria-label="AI shortcut actions">
+          {["Analyze Page", "Explain", "Generate"].map((act) => (
+            <button
+              key={act}
+              className="ai-pill-btn"
+              onClick={() => handleSend(act)}
+            >
+              {act}
+            </button>
+          ))}
+        </div>
 
-      {/* Messages */}
-      <div
-        className="ai-sidebar__messages"
-        role="log"
-        aria-live="polite"
-        aria-label="AI conversation"
-      >
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`ai-message ai-message--${msg.role}`}
-          >
-            {msg.role === "assistant" && (
-              <span className="ai-message__label" aria-hidden="true">Kage AI</span>
+        {/* ── Chat Messages (if conversation started) ─────────── */}
+        {messages.length > 0 && (
+          <div className="ai-sidebar__conversation">
+            {messages.map((m) => (
+              <div key={m.id} className={`ai-chat-bubble ai-chat-bubble--${m.role}`}>
+                <span className="ai-chat-bubble__sender">{m.role === "assistant" ? "Kage AI" : "You"}</span>
+                <p className="ai-chat-bubble__text">{m.text}</p>
+              </div>
+            ))}
+            {isThinking && (
+              <div className="ai-chat-bubble ai-chat-bubble--assistant">
+                <span className="ai-chat-bubble__sender">Kage AI</span>
+                <div className="ai-thinking-indicator">
+                  <span /><span /><span />
+                </div>
+              </div>
             )}
-            <p className="ai-message__text">{msg.text}</p>
-          </div>
-        ))}
-        {isThinking && (
-          <div className="ai-message ai-message--assistant" aria-live="polite" aria-label="Kage AI is thinking">
-            <span className="ai-message__label" aria-hidden="true">Kage AI</span>
-            <div className="ai-thinking" aria-hidden="true">
-              <span/><span/><span/>
-            </div>
+            <div ref={messagesEndRef} />
           </div>
         )}
-        <div ref={messagesEndRef} />
+
+        {/* ── Default Capability & Action List (NO EMOJIS) ──────── */}
+        {messages.length === 0 && (
+          <>
+            <div className="ai-intro-section">
+              <p className="ai-intro-section__greeting">
+                Hi, I'm Kage AI.<br />
+                I can help you with:
+              </p>
+              <ul className="ai-capabilities-list">
+                <li><span className="ai-cap-icon"><BarChart3 size={15} strokeWidth={1.8} /></span> Analyze any website</li>
+                <li><span className="ai-cap-icon"><Crosshair size={15} strokeWidth={1.8} /></span> Inspect elements</li>
+                <li><span className="ai-cap-icon"><Bug size={15} strokeWidth={1.8} /></span> Debug errors</li>
+                <li><span className="ai-cap-icon"><Zap size={15} strokeWidth={1.8} /></span> Optimize performance</li>
+                <li><span className="ai-cap-icon"><FlaskConical size={15} strokeWidth={1.8} /></span> Generate tests</li>
+                <li><span className="ai-cap-icon"><MessageSquare size={15} strokeWidth={1.8} /></span> Answer your questions</li>
+              </ul>
+            </div>
+
+            <div className="ai-action-cards-section">
+              <h4 className="ai-action-cards__heading">What would you like to do?</h4>
+              <div className="ai-action-cards-list">
+                {ACTION_CARDS.map((card) => (
+                  <button
+                    key={card.id}
+                    className="ai-action-card"
+                    onClick={() => handleSend(card.title)}
+                  >
+                    <div className="ai-action-card__icon-box">
+                      {card.icon}
+                    </div>
+                    <div className="ai-action-card__info">
+                      <span className="ai-action-card__title">{card.title}</span>
+                      <span className="ai-action-card__desc">{card.desc}</span>
+                    </div>
+                    <ChevronRight size={15} strokeWidth={2} className="ai-action-card__arrow" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Suggestion chips */}
-      <div className="ai-sidebar__chips" role="group" aria-label="Suggested actions">
-        {[
-          "Analyze this page",
-          "Explain selected element",
-          "Find issues",
-          "Generate test",
-        ].map((chip) => (
-          <button
-            key={chip}
-            className="ai-chip"
-            onClick={() => setInput(chip)}
-            aria-label={chip}
-          >
-            {chip}
-          </button>
-        ))}
-      </div>
+      {/* ── Bottom Input & Footer ───────────────────────────────── */}
+      <div className="ai-sidebar__bottom-panel">
+        <div className="ai-input-capsule">
+          <textarea
+            id={inputId}
+            className="ai-input-capsule__textarea"
+            placeholder="Ask anything about this page..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={1}
+          />
+          <div className="ai-input-capsule__toolbar">
+            <div className="ai-input-capsule__tools-left">
+              <button type="button" className="ai-tool-btn" title="Attach file or screenshot">
+                <Paperclip size={15} strokeWidth={1.8} />
+              </button>
 
-      {/* Input */}
-      <div className="ai-sidebar__input-area">
-        <label htmlFor={inputId} className="sr-only">
-          Ask Kage AI anything about this page
-        </label>
-        <textarea
-          id={inputId}
-          className="ai-sidebar__input"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask anything about this page…"
-          rows={1}
-          aria-label="AI prompt input"
-          disabled={isThinking}
-        />
-        <button
-          className="ai-sidebar__send"
-          onClick={handleSend}
-          disabled={!input.trim() || isThinking}
-          aria-label="Send message"
-          id="btn-ai-send"
-        >
-          <SendIcon />
-        </button>
+              <div className="ai-model-selector-wrap">
+                <button
+                  type="button"
+                  className="ai-model-btn"
+                  onClick={() => setShowModelPicker((p) => !p)}
+                >
+                  <span>{model}</span>
+                  <ChevronDown size={12} strokeWidth={2} />
+                </button>
+                {showModelPicker && (
+                  <div className="ai-model-dropdown">
+                    {aiProviderRegistry.getAllModels().map((m) => (
+                      <button
+                        key={m.id}
+                        className={`ai-model-option ${m.name === model ? "ai-model-option--selected" : ""}`}
+                        onClick={() => {
+                          setModel(m.name);
+                          aiProviderRegistry.setActiveModel(m.id);
+                          setShowModelPicker(false);
+                        }}
+                      >
+                        <span>{m.name}</span>
+                        {m.capabilities.toolCalling && (
+                          <span className="model-chip" style={{ fontSize: "9px", padding: "1px 4px" }}>
+                            TB
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="ai-send-btn"
+              onClick={() => handleSend()}
+              disabled={!input.trim() || isThinking}
+              aria-label="Send message"
+            >
+              <SendHorizontal size={14} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+
+        {/* Brand Quote & Accent Bar */}
+        <div className="ai-sidebar__quote-row">
+          <p className="ai-sidebar__quote">"Better tools. Brighter developers."</p>
+          <div className="ai-sidebar__quote-bar">
+            <span className="ai-sidebar__quote-bar-fill" />
+          </div>
+        </div>
       </div>
     </aside>
   );

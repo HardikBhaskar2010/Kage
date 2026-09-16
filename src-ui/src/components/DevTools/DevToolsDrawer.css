@@ -1,0 +1,216 @@
+/* ─── KAGE DevTools Suite (Integrated Flow Drawer) ────────────────── */
+.devtools-drawer {
+  position: relative;
+  width: 100%;
+  height: 0;
+  min-height: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(24, 6, 15, 0.92);
+  border-top: 1px solid transparent;
+  box-shadow: 0 -12px 40px rgba(10, 2, 7, 0.7);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  transition: height 260ms cubic-bezier(0.32, 0.72, 0, 1),
+              opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+              border-color 200ms ease;
+}
+
+.devtools-drawer--open {
+  height: 310px;
+  opacity: 1;
+  pointer-events: auto;
+  border-top-color: rgba(249, 219, 189, 0.22);
+}
+
+.devtools-drawer--expanded {
+  height: 520px;
+}
+
+/* ─── Header & Segmented Tab Bar ──────────────────────────────────── */
+.devtools-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  background: linear-gradient(180deg, rgba(38, 10, 24, 0.95) 0%, rgba(22, 5, 14, 0.98) 100%);
+  border-bottom: 1px solid rgba(249, 219, 189, 0.12);
+  padding: 0 10px;
+  flex-shrink: 0;
+}
+
+.devtools-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.devtools-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 26px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(249, 219, 189, 0.7);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 140ms var(--ease-emil-out),
+              background 140ms var(--ease-emil-out),
+              border-color 140ms var(--ease-emil-out),
+              transform 100ms var(--ease-emil-out),
+              box-shadow 140ms var(--ease-emil-out);
+}
+
+.devtools-tab:hover {
+  color: #ffffff;
+  background: rgba(249, 219, 189, 0.08);
+  border-color: rgba(249, 219, 189, 0.15);
+  transform: translateY(-1px);
+}
+
+.devtools-tab:active {
+  transform: scale(0.96) translateY(0);
+}
+
+.devtools-tab--active {
+  color: #ffffff;
+  font-weight: 600;
+  background: linear-gradient(135deg, rgba(218, 98, 125, 0.28) 0%, rgba(165, 56, 96, 0.18) 100%);
+  border-color: rgba(249, 219, 189, 0.32);
+  box-shadow: 0 2px 10px rgba(218, 98, 125, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* ─── Tab Icon Glows ──────────────────────────────────────────────── */
+.devtools-tab__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.devtools-tab__icon--console { color: #38bdf8; }
+.devtools-tab__icon--network { color: #f43f5e; }
+.devtools-tab__icon--dom     { color: #c084fc; }
+.devtools-tab__icon--perf    { color: #fbbf24; }
+.devtools-tab__icon--storage { color: #60a5fa; }
+.devtools-tab__icon--sec     { color: #34d399; }
+
+/* ─── Tab Badges ─────────────────────────────────────────────────── */
+.devtools-tab__badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: var(--radius-full);
+  line-height: 1.2;
+}
+
+.devtools-tab__badge--info {
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.devtools-tab__badge--live {
+  background: rgba(244, 63, 94, 0.18);
+  color: #fda4af;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.devtools-tab__badge--live::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: #f43f5e;
+  box-shadow: 0 0 6px #f43f5e;
+  animation: live-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.7); }
+}
+
+.devtools-tab__badge--fps {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fde047;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  font-family: var(--font-mono);
+}
+
+.devtools-tab__badge--sec {
+  background: rgba(52, 211, 153, 0.15);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  font-family: var(--font-mono);
+}
+
+/* ─── Window Controls ─────────────────────────────────────────────── */
+.devtools-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.devtools-ctrl-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(249, 219, 189, 0.65);
+  cursor: pointer;
+  transition: color 140ms var(--ease-emil-out),
+              background 140ms var(--ease-emil-out),
+              border-color 140ms var(--ease-emil-out),
+              transform 100ms var(--ease-emil-out);
+}
+
+.devtools-ctrl-btn:hover {
+  color: #ffffff;
+  background: rgba(249, 219, 189, 0.12);
+  border-color: rgba(249, 219, 189, 0.2);
+  transform: translateY(-1px);
+}
+
+.devtools-ctrl-btn:active {
+  transform: scale(0.92);
+}
+
+.devtools-ctrl-btn--close:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  transform: rotate(90deg);
+}
+
+.devtools-ctrl-btn--close:active {
+  transform: scale(0.92) rotate(90deg);
+}
+
+/* ─── Content Pane ────────────────────────────────────────────────── */
+.devtools-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}

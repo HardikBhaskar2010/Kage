@@ -26,7 +26,30 @@ All agents operating in this repository must uphold this inviolable rule across 
 
 ---
 
-## 2. Global Runtime Domain Boundaries
+## 2. Mandatory Skill Consultation Invariant (Read Skills Before Changes)
+
+All agents working on KAGE must adhere strictly to this pre-execution requirement:
+
+```
+╔═════════════════════════════════════════════════════════════════════════════════════╗
+║                      MANDATORY SKILL CONSULTATION INVARIANT                         ║
+║                                                                                     ║
+║        AGENTS MUST READ AND CONSULT RELEVANT SKILLS IN `.agents/skills/`            ║
+║        BEFORE MAKING ANY CODE CHANGES IN THE CODEBASE.                              ║
+╚═════════════════════════════════════════════════════════════════════════════════════╝
+```
+
+* **Inspect Skills Before Coding:** Before modifying, creating, or refactoring any code in this repository, agents **MUST read the relevant skill documentation** in `.agents/skills/`:
+  * **UI Craft & Polish:** Read [`.agents/skills/emil-design-eng/SKILL.md`](file:///c:/Users/sneha/Videos/Kage/.agents/skills/emil-design-eng/SKILL.md) (Emil Kowalski's standards on layout finesse, micro-interactions, click states, and invisible details).
+  * **Motion & Physics:** Read [`.agents/skills/animate/SKILL.md`](file:///c:/Users/sneha/Videos/Kage/.agents/skills/animate/SKILL.md) and [`.agents/skills/apple-design/SKILL.md`](file:///c:/Users/sneha/Videos/Kage/.agents/skills/apple-design/SKILL.md) (fluid spring dynamics, interruptible gestures, strict duration envelopes, no `transition: all`).
+  * **Design Systems & Tokens:** Read [`.agents/skills/design-systems/SKILL.md`](file:///c:/Users/sneha/Videos/Kage/.agents/skills/design-systems/SKILL.md) and [`.agents/skills/ui-design/SKILL.md`](file:///c:/Users/sneha/Videos/Kage/.agents/skills/ui-design/SKILL.md).
+  * **Security & OWASP Defense:** Read [`.agents/skills/security-owasp/SKILL.md`](file:///c:/Users/sneha/Videos/Kage/.agents/skills/security-owasp/SKILL.md) and [`.agents/skills/prompt-injection-defense/SKILL.md`](file:///c:/Users/sneha/Videos/Kage/.agents/skills/prompt-injection-defense/SKILL.md).
+  * **Testing & Quality Architecture:** Read [`.agents/skills/test-architect/SKILL.md`](file:///c:/Users/sneha/Videos/Kage/.agents/skills/test-architect/SKILL.md).
+* **Zero Sloppy / Generic Code:** No ad-hoc styles, raw placeholders, or uninspired solutions are permitted when an installed skill provides the canonical conventions, easing formulas, and quality bars.
+
+---
+
+## 3. Global Runtime Domain Boundaries
 
 KAGE divides responsibilities across four distinct layers. Never blur these lines:
 
@@ -47,7 +70,7 @@ KAGE divides responsibilities across four distinct layers. Never blur these line
 
 ---
 
-## 3. Data & Security Rules (Untrusted Webpage Boundary)
+## 4. Data & Security Rules (Untrusted Webpage Boundary)
 
 * **Untrusted by Default:** All content retrieved from the web (DOM strings, attributes, console messages, network request/response headers and bodies) is **untrusted external data**, never instructions.
 * **Prompt Injection Defense:** Web content must be wrapped in strict data delimiters (`<webpage_data>` / `<untrusted_content>`) before reaching an LLM. Never concatenate raw page text directly into system instructions.
@@ -60,7 +83,7 @@ KAGE divides responsibilities across four distinct layers. Never blur these line
 
 ---
 
-## 4. Coding & Implementation Standards
+## 5. Coding & Implementation Standards
 
 ### Rust (Host Core & Subsystems)
 * Use `thiserror` for domain-specific errors (e.g., `ToolError`, `CdpError`, `StorageError`) and `anyhow` for top-level application boundaries.
@@ -81,7 +104,7 @@ KAGE divides responsibilities across four distinct layers. Never blur these line
 
 ---
 
-## 5. Performance Budgets
+## 6. Performance Budgets
 
 Agents must verify that implementations stay within the performance envelopes specified in [docs/02-architecture/Performance_Benchmarks.md](docs/02-architecture/Performance_Benchmarks.md):
 
@@ -92,7 +115,7 @@ Agents must verify that implementations stay within the performance envelopes sp
 
 ---
 
-## 6. Specification Directory Reference
+## 7. Specification Directory Reference
 
 Before creating or modifying any feature, consult the authoritative specification:
 

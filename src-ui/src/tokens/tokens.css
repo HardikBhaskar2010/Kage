@@ -4,12 +4,25 @@
  */
 
 :root {
-  /* ─── Exact Palette (from Design System.png) ─────────────────────────── */
-  --color-peach:        #F9DBBD;  /* Peach · Primary Light */
-  --color-pink:         #FFA5AB;  /* Pink · Primary */
-  --color-rose:         #DA627D;  /* Rose / Magenta Accent */
-  --color-magenta:      #A53860;  /* Magenta Secondary */
-  --color-wine:         #450920;  /* Wine · Background accent */
+  /* ─── KAGE Canonical Design Tokens (Chunk 7 Visual Reference) ───────── */
+  --kage-peach:         #F9DBBD;
+  --kage-pink:          #FFA5AB;
+  --kage-rose:          #DA627D;
+  --kage-magenta:       #A53860;
+  --kage-wine:          #450920;
+
+  --glass-blur:         blur(20px);
+  --glass-border:       rgba(249, 219, 189, 0.15);
+  --glass-surface:      rgba(43, 14, 22, 0.75);
+  --chrome-height:      40px;
+  --sidebar-width:      54px;
+
+  /* ─── Color Aliases ─────────────────────────────────────────────────── */
+  --color-peach:        var(--kage-peach);
+  --color-pink:         var(--kage-pink);
+  --color-rose:         var(--kage-rose);
+  --color-magenta:      var(--kage-magenta);
+  --color-wine:         var(--kage-wine);
 
   --color-surface-1:    #2B0E16;  /* Darkest surface */
   --color-surface-2:    #3A1421;  /* Mid surface */
@@ -20,7 +33,7 @@
 
   /* ─── Semantic Colour Roles ───────────────────────────────────────────── */
   --color-bg-base:       #1a0810;
-  --color-bg-surface:    rgba(43, 14, 22, 0.85);
+  --color-bg-surface:    var(--glass-surface);
   --color-bg-elevated:   rgba(58, 20, 33, 0.92);
   --color-bg-overlay:    rgba(249, 219, 189, 0.06);
 
@@ -104,18 +117,26 @@
   --z-modal:     60;
   --z-toast:     70;
 
-  /* ─── Animation ──────────────────────────────────────────────────────── */
-  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
-  --ease-spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-smooth:    cubic-bezier(0.4, 0, 0.2, 1);
-  --duration-fast:   150ms;
-  --duration-normal: 250ms;
-  --duration-slow:   400ms;
+  /* ─── Animation (Emil Kowalski Design Engineering curves) ────────────── */
+  --ease-emil-out:    cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-emil-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-emil-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out-quart:   cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-spring:      cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth:      cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-press:   160ms;
+  --duration-fast:    150ms;
+  --duration-normal:  250ms;
+  --duration-slow:    400ms;
 
-  /* ─── Layout dimensions (matching Browsing Screen mockup) ────────────── */
-  --titlebar-height: 40px;     /* Top nav bar with KAGE logo + tabs */
-  --omnibox-height:  48px;     /* URL + search bar row */
-  --icon-sidebar-w:  56px;     /* Left collapsed icon sidebar */
-  --ai-sidebar-w:    340px;    /* Right AI Developer Assistant panel */
-  --tab-height:      36px;
+  /* ─── Layout dimensions (matching Mockup_New Tab Screen.png) ──────────── */
+  --titlebar-height: 42px;     /* Top nav bar with KAGE logo + tabs */
+  --omnibox-height:  46px;     /* URL + search bar row */
+  --icon-sidebar-w:  64px;     /* Left collapsed icon dock */
+  --ai-sidebar-w:    360px;    /* Left-docked KAGE AI panel */
+  --tab-height:      34px;
+
+  /* ─── Active Tab Glow (Liquid Glass peach-to-burgundy) ────────────────── */
+  --tab-active-bg:   linear-gradient(135deg, rgba(218, 98, 125, 0.35) 0%, rgba(165, 56, 96, 0.55) 100%);
+  --tab-active-glow: 0 4px 18px rgba(218, 98, 125, 0.28);
 }
