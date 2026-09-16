@@ -1,0 +1,20 @@
+# Temporary & Scratch files
+temp/
+scratch/
+*.tmp
+*.log
+
+# Dependencies & Build artifacts (Tauri, Node, Rust)
+node_modules/
+dist/
+target/
+build/
+.cache/
+
+# OS and Editor metadata
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
