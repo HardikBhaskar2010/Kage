@@ -74,6 +74,10 @@ export class MockBrowserAdapter implements BrowserAdapter {
     // Simulated reload
   }
 
+  async syncViewportBounds(_bounds: import("./BrowserAdapter").ViewportBounds): Promise<void> {
+    // No-op in browser mock mode
+  }
+
   private formatTitle(url: string): string {
     try {
       const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);

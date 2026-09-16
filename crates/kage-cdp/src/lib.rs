@@ -17,5 +17,5 @@ pub mod broker;
 pub mod client;
 pub mod events;
 
-pub use broker::{CdpBroker, CdpError, SessionId};
+pub use broker::{CdpBroker, CdpConnectionDescriptor, CdpError, SessionId};
 pub use events::CdpEvent;

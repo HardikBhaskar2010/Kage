@@ -603,6 +603,33 @@
   border-radius: var(--radius-full);
 }
 
+/* ─── Tool Bus Execution Pill ─────────────────────────────────── */
+.ai-tool-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: rgba(218, 98, 125, 0.14);
+  border: 1px solid rgba(218, 98, 125, 0.3);
+  color: var(--color-peach);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+}
+
+.ai-tool-pill__tier {
+  color: #55efc4;
+  font-weight: var(--weight-bold);
+}
+
+.ai-tool-pill__time {
+  color: var(--color-text-muted);
+  border-left: 1px solid rgba(218, 98, 125, 0.25);
+  padding-left: 6px;
+}
+
 /* ─── Reduced motion ─────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .ai-sidebar {

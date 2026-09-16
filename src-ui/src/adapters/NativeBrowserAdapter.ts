@@ -33,4 +33,8 @@ export class NativeBrowserAdapter implements BrowserAdapter {
   async refresh(tabId: string): Promise<void> {
     return invoke<void>("reload_tab", { tabId });
   }
+
+  async syncViewportBounds(bounds: import("./BrowserAdapter").ViewportBounds): Promise<void> {
+    return invoke<void>("sync_viewport_bounds", { bounds });
+  }
 }

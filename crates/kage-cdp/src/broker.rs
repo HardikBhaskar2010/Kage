@@ -47,6 +47,18 @@ pub enum CdpError {
     Serialization(#[from] serde_json::Error),
 }
 
+/// Connection descriptor returned to authorized internal clients (DevTools, Context Engine)
+/// for connecting to the Rust-managed CDP loopback broker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CdpConnectionDescriptor {
+    /// Ephemeral loopback port bound by the broker (never hardcoded).
+    pub port: u16,
+    /// Ephemeral session nonce required for handshake authentication.
+    pub nonce: String,
+    /// Full authenticated WebSocket connection URL.
+    pub ws_url: String,
+}
+
 /// A registered CDP session subscriber receiving raw CDP events.
 type EventSink = mpsc::UnboundedSender<serde_json::Value>;
 
@@ -57,23 +69,51 @@ type EventSink = mpsc::UnboundedSender<serde_json::Value>;
 pub struct CdpBroker {
     /// Session nonce issued at startup — must be presented by all WebSocket clients.
     nonce: String,
+    /// Ephemeral loopback port dynamically bound at runtime.
+    port: u16,
     /// Active session subscriptions.
     sessions: Arc<RwLock<HashMap<SessionId, EventSink>>>,
 }
 
 impl CdpBroker {
-    /// Create a new broker with a randomly generated ephemeral nonce.
+    /// Create a new broker with an ephemeral nonce and initial port.
     pub fn new() -> Self {
+        Self::with_port(0)
+    }
+
+    /// Create a new broker bound to a specific or ephemeral loopback port.
+    pub fn with_port(port: u16) -> Self {
+        let nonce = format!("kage_nonce_{}", Uuid::new_v4().simple());
         CdpBroker {
-            nonce: Uuid::new_v4().to_string(),
+            nonce,
+            port,
             sessions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
+    /// Set the dynamically bound loopback port once listener socket is established.
+    pub fn set_port(&mut self, port: u16) {
+        self.port = port;
+    }
+
+    /// Return the assigned loopback port.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     /// Return the ephemeral nonce — used by the Tauri host to construct the
-    /// authenticated WebSocket URL: `ws://127.0.0.1:<port>/?nonce=<nonce>`.
+    /// authenticated WebSocket URL: `ws://127.0.0.1:<port>/cdp?nonce=<nonce>`.
     pub fn nonce(&self) -> &str {
         &self.nonce
+    }
+
+    /// Produce a connection descriptor for authorized UI/telemetry consumers.
+    pub fn descriptor(&self) -> CdpConnectionDescriptor {
+        CdpConnectionDescriptor {
+            port: self.port,
+            nonce: self.nonce.clone(),
+            ws_url: format!("ws://127.0.0.1:{}/cdp?nonce={}", self.port, self.nonce),
+        }
     }
 
     /// Register a new named CDP session and return the receiving end of the event channel.

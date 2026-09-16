@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import "./MicroInspectOverlay.css";
 import { useBrowser } from "../../context/BrowserContext";
 import { Sparkles, X, Code, Copy, Check } from "lucide-react";
+import { getTelemetryProvider } from "../../adapters/TelemetryProvider";
 
 interface ElementTarget {
   tag: string;
@@ -57,6 +58,27 @@ export const MicroInspectOverlay: React.FC = () => {
 
       if (hoveredEl) {
         setPinnedEl(hoveredEl);
+        const selector = `${hoveredEl.tag}${hoveredEl.className ? `.${hoveredEl.className}` : ""}`;
+        getTelemetryProvider()
+          .inspectElement(selector)
+          .then((node) => {
+            if (node) {
+              setPinnedEl((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      tag: node.tag.toLowerCase(),
+                      className: node.classes[0] || prev.className,
+                      computedCss: {
+                        ...prev.computedCss,
+                        ...(node.computedStyles || {}),
+                      },
+                    }
+                  : null
+              );
+            }
+          })
+          .catch(() => {});
       }
     };
 

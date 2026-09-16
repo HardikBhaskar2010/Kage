@@ -37,6 +37,23 @@ export async function toolDispatch(
   return invoke<ToolResponse>("tool_dispatch", { payload });
 }
 
+export interface CdpConnectionDescriptor {
+  port: number;
+  nonce: string;
+  ws_url: string;
+}
+
+/**
+ * Retrieve the full dynamic CDP connection descriptor from the Rust host.
+ * Command: `kage:cdp:get_connection`
+ *
+ * Ephemeral port and session nonce are dynamically negotiated.
+ * Never hardcode localhost ports.
+ */
+export async function getCdpConnection(): Promise<CdpConnectionDescriptor> {
+  return invoke<CdpConnectionDescriptor>("get_cdp_connection");
+}
+
 /**
  * Retrieve the ephemeral CDP session nonce.
  * Command: `kage:cdp:get_nonce`

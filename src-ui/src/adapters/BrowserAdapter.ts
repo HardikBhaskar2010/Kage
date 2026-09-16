@@ -16,6 +16,14 @@ export interface TabInfo {
   isSecure?: boolean;
 }
 
+export interface ViewportBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale_factor: number;
+}
+
 export interface BrowserAdapter {
   /** Create a new tab and return its metadata */
   createTab(url?: string, title?: string): Promise<TabInfo>;
@@ -31,6 +39,8 @@ export interface BrowserAdapter {
   goForward(tabId: string): Promise<void>;
   /** Reload the active page */
   refresh(tabId: string): Promise<void>;
+  /** Synchronize viewport container bounds to the native CEF window surface */
+  syncViewportBounds(bounds: ViewportBounds): Promise<void>;
 }
 
 /** Check if executing inside Tauri desktop runtime */

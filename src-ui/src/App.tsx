@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "./App.css";
 
 import {
@@ -20,6 +20,7 @@ import {
 
 import { BrowserProvider, useBrowser } from "./context/BrowserContext";
 import type { ActiveTool } from "./context/BrowserContext";
+import { getBrowserAdapter } from "./adapters/BrowserAdapter";
 import { TabStrip } from "./components/TabStrip/TabStrip";
 import { Omnibox } from "./components/Omnibox/Omnibox";
 import { IconSidebar } from "./components/IconSidebar/IconSidebar";
@@ -79,6 +80,38 @@ const AppInner: React.FC = () => {
   } = useBrowser();
 
   const [inputUrl, setInputUrl] = useState(activeTab?.url || "");
+  const viewportStageRef = useRef<HTMLDivElement>(null);
+
+  // Synchronize viewport stage coordinates to native CEF child window (KAGE-ARCH-002)
+  useEffect(() => {
+    const el = viewportStageRef.current;
+    if (!el) return;
+
+    const syncBounds = () => {
+      const rect = el.getBoundingClientRect();
+      const scaleFactor = window.devicePixelRatio || 1;
+      getBrowserAdapter().syncViewportBounds({
+        x: Math.round(rect.left * scaleFactor),
+        y: Math.round(rect.top * scaleFactor),
+        width: Math.round(rect.width * scaleFactor),
+        height: Math.round(rect.height * scaleFactor),
+        scale_factor: scaleFactor,
+      }).catch(() => {});
+    };
+
+    const observer = new ResizeObserver(() => {
+      syncBounds();
+    });
+
+    observer.observe(el);
+    window.addEventListener("resize", syncBounds);
+    syncBounds();
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", syncBounds);
+    };
+  }, []);
 
   // Sync input bar with active tab url
   useEffect(() => {
@@ -198,7 +231,7 @@ const AppInner: React.FC = () => {
 
         {/* Main Viewport Stage */}
         <main className="app__content" role="main" aria-label="Browser viewport">
-          <div className="app__viewport-stage">
+          <div className="app__viewport-stage" ref={viewportStageRef}>
             {activeTool === "settings" ? (
               <SettingsPage />
             ) : activeTool === "extensions" ? (

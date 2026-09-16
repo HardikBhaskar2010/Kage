@@ -30,7 +30,20 @@ pub fn run() {
         .manage(cdp_broker)
         .invoke_handler(tauri::generate_handler![
             ipc::tool_dispatch,
+            ipc::get_cdp_connection,
             ipc::get_cdp_nonce,
+            ipc::create_tab,
+            ipc::close_tab,
+            ipc::switch_tab,
+            ipc::navigate_to,
+            ipc::go_back,
+            ipc::go_forward,
+            ipc::reload_tab,
+            ipc::inspect_node,
+            ipc::eval_js,
+            ipc::get_audit_logs,
+            ipc::verify_audit_chain,
+            ipc::sync_viewport_bounds,
         ])
         .run(tauri::generate_context!())
         .expect("KAGE Tauri application failed to start");

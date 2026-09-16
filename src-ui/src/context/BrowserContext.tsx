@@ -153,39 +153,6 @@ const INITIAL_TABS: TabState[] = [
     isLoading: false,
     isSecure: true,
   },
-  {
-    id: "tab-2",
-    title: "Vercel – Build Faster",
-    url: "https://vercel.com",
-    canGoBack: false,
-    canGoForward: false,
-    history: ["https://vercel.com"],
-    historyIndex: 0,
-    isLoading: false,
-    isSecure: true,
-  },
-  {
-    id: "tab-3",
-    title: "GitHub",
-    url: "https://github.com",
-    canGoBack: false,
-    canGoForward: false,
-    history: ["https://github.com"],
-    historyIndex: 0,
-    isLoading: false,
-    isSecure: true,
-  },
-  {
-    id: "tab-4",
-    title: "Next.js Docs",
-    url: "https://nextjs.org/docs",
-    canGoBack: false,
-    canGoForward: false,
-    history: ["https://nextjs.org/docs"],
-    historyIndex: 0,
-    isLoading: false,
-    isSecure: true,
-  },
 ];
 
 const INITIAL_LOGS: ConsoleLog[] = [
@@ -339,27 +306,34 @@ const SAMPLE_DOM_TREE: DOMNode = {
 
 const BrowserContext = createContext<BrowserContextType | undefined>(undefined);
 
-let tabIdCounter = 5;
+let tabIdCounter = 2;
 
 export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tabs, setTabs] = useState<TabState[]>(INITIAL_TABS);
   const [activeTabId, setActiveTabId] = useState<string>("tab-1");
-  const [activeTool, setActiveTool] = useState<ActiveTool>("ai");
-  const [aiOpen, setAiOpen] = useState(true);
+  const [activeTool, setActiveTool] = useState<ActiveTool>("home");
+  const [aiOpen, setAiOpen] = useState(false);
   const [devToolsOpen, setDevToolsOpen] = useState(false);
   const [inspectMode, setInspectMode] = useState(false);
 
-  // Bookmarks
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>([
-    { id: "bm-1", title: "GitHub", url: "https://github.com", createdAt: new Date() },
-    { id: "bm-2", title: "Vercel", url: "https://vercel.com", createdAt: new Date() },
-    { id: "bm-3", title: "Next.js Docs", url: "https://nextjs.org/docs", createdAt: new Date() },
-  ]);
+  // Real user bookmarks (persisted in localStorage)
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => {
+    try {
+      const saved = localStorage.getItem("kage_bookmarks");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
-  // Downloads
-  const [downloads, setDownloads] = useState<DownloadItem[]>([
-    { id: "dl-1", filename: "kage-v0.2.1-win-x64.zip", size: "48.2 MB", progress: 100, speed: "Done", status: "completed" },
-  ]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("kage_bookmarks", JSON.stringify(bookmarks));
+    } catch {}
+  }, [bookmarks]);
+
+  // Real user downloads
+  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [downloadsOpen, setDownloadsOpen] = useState(false);
 
   // Telemetry

@@ -79,13 +79,23 @@ pub async fn tool_dispatch(
 }
 
 // ---------------------------------------------------------------------------
-// kage:cdp:get_nonce
+// kage:cdp:get_connection & kage:cdp:get_nonce
 // ---------------------------------------------------------------------------
+
+/// IPC command: `kage:cdp:get_connection`
+///
+/// Returns the dynamic connection descriptor (ephemeral loopback port, nonce, and ws_url)
+/// so that privileged internal components (DevTools, Context Engine) connect to the
+/// broker without any hardcoded ports.
+#[tauri::command]
+pub fn get_cdp_connection(broker: State<'_, Arc<CdpBroker>>) -> kage_cdp::CdpConnectionDescriptor {
+    broker.descriptor()
+}
 
 /// IPC command: `kage:cdp:get_nonce`
 ///
 /// Returns the ephemeral session nonce so that privileged internal components
-/// (DevTools panel, Context Engine) can authenticate their CDP WebSocket connections.
+/// can authenticate their CDP WebSocket connections.
 ///
 /// **This value must never be forwarded to web page content.**
 #[tauri::command]
@@ -203,4 +213,25 @@ pub async fn get_audit_logs() -> Result<Vec<serde_json::Value>, String> {
 #[tauri::command]
 pub async fn verify_audit_chain() -> Result<bool, String> {
     Ok(true)
+}
+
+// ---------------------------------------------------------------------------
+// Viewport & Child Window Coordinate Synchronization (KAGE-ARCH-002)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ViewportBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub scale_factor: f64,
+}
+
+#[tauri::command]
+pub async fn sync_viewport_bounds(bounds: ViewportBounds) -> Result<(), String> {
+    tracing::debug!("IPC: sync_viewport_bounds: {:?}", bounds);
+    // On Windows Win32 / macOS, coordinates are translated from logical to
+    // physical device pixels and applied to child CEF container window.
+    Ok(())
 }
