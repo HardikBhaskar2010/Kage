@@ -7,7 +7,7 @@ scratch/
 # Dependencies & Build artifacts (Tauri, Node, Rust)
 node_modules/
 dist/
-target/
+**/target/
 build/
 .cache/
 

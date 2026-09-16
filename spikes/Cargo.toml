@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+    "01-cef-tauri-embedding",
+    "02-cdp-handshake-auth",
+    "03-toolbus-audit",
+    "integration-gate",
+]
