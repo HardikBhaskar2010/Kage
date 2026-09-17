@@ -3,7 +3,6 @@
 pub mod ipc;
 
 use std::sync::Arc;
-use tauri::Manager;
 use kage_core::ToolBus;
 use kage_cdp::CdpBroker;
 
@@ -39,6 +38,7 @@ pub fn run() {
             ipc::go_back,
             ipc::go_forward,
             ipc::reload_tab,
+            ipc::inspect_at_location,
             ipc::inspect_node,
             ipc::eval_js,
             ipc::get_audit_logs,

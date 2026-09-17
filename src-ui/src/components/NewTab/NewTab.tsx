@@ -6,7 +6,16 @@ import {
   Mic,
   Plus,
   Sun,
+  Moon,
+  CloudSun,
+  CloudMoon,
+  Cloud,
+  CloudRain,
+  CloudSnow,
+  CloudLightning,
 } from "lucide-react";
+import { fetchOpenMeteoWeather } from "../../services/weatherService";
+import type { WeatherData } from "../../services/weatherService";
 
 // Crisp SVG Brand Icons
 const GithubIcon = () => (
@@ -92,6 +101,36 @@ const QUICK_LINKS: QuickLinkItem[] = [
   },
 ];
 
+const renderWeatherIcon = (code: number, isDay: boolean) => {
+  if (code === 0) {
+    return isDay ? (
+      <Sun size={15} strokeWidth={2.2} className="new-tab__weather-icon" />
+    ) : (
+      <Moon size={15} strokeWidth={2.2} className="new-tab__weather-icon" />
+    );
+  }
+  if (code <= 3) {
+    return isDay ? (
+      <CloudSun size={15} strokeWidth={2.2} className="new-tab__weather-icon" />
+    ) : (
+      <CloudMoon size={15} strokeWidth={2.2} className="new-tab__weather-icon" />
+    );
+  }
+  if (code <= 48) {
+    return <Cloud size={15} strokeWidth={2.2} className="new-tab__weather-icon" />;
+  }
+  if (code <= 67 || (code >= 80 && code <= 82)) {
+    return <CloudRain size={15} strokeWidth={2.2} className="new-tab__weather-icon" />;
+  }
+  if (code <= 77 || (code >= 85 && code <= 86)) {
+    return <CloudSnow size={15} strokeWidth={2.2} className="new-tab__weather-icon" />;
+  }
+  if (code >= 95) {
+    return <CloudLightning size={15} strokeWidth={2.2} className="new-tab__weather-icon" />;
+  }
+  return <Sun size={15} strokeWidth={2.2} className="new-tab__weather-icon" />;
+};
+
 interface NewTabProps {
   onNavigate: (url: string) => void;
   onToggleAi?: () => void;
@@ -100,7 +139,19 @@ interface NewTabProps {
 export const NewTab: React.FC<NewTabProps> = ({ onNavigate, onToggleAi }) => {
   const [query, setQuery] = useState("");
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [weather, setWeather] = useState<WeatherData>({
+    temp: 28,
+    city: "New Delhi",
+    weatherCode: 1,
+    isDay: true,
+    condition: "Mainly Clear",
+  });
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Fetch live weather from Open-Meteo on mount
+  useEffect(() => {
+    fetchOpenMeteoWeather().then((w) => setWeather(w)).catch(() => {});
+  }, []);
 
   // Keep clock live every second
   useEffect(() => {
@@ -172,10 +223,10 @@ export const NewTab: React.FC<NewTabProps> = ({ onNavigate, onToggleAi }) => {
 
       {/* ── Top-Right Status Widget (No emojis) ───────────────────── */}
       <div className="new-tab__top-right" aria-live="off">
-        <div className="new-tab__weather">
-          <Sun size={15} strokeWidth={2.2} className="new-tab__weather-icon" />
-          <span className="new-tab__weather-temp">28°C</span>
-          <span className="new-tab__weather-loc">New Delhi</span>
+        <div className="new-tab__weather" title={`${weather.city} · ${weather.condition}`}>
+          {renderWeatherIcon(weather.weatherCode, weather.isDay)}
+          <span className="new-tab__weather-temp">{weather.temp}°C</span>
+          <span className="new-tab__weather-loc">{weather.city}</span>
         </div>
         <time className="new-tab__clock-time" dateTime={currentTime.toISOString()}>
           {timeStr}

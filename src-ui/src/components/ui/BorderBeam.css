@@ -1,0 +1,44 @@
+/**
+ * BorderBeam Styles — Animated perimeter gradient beam
+ */
+.border-beam {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid transparent;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  z-index: 1;
+}
+
+.border-beam::after {
+  content: "";
+  position: absolute;
+  aspect-ratio: 1 / 1;
+  width: var(--beam-size, 200px);
+  background: radial-gradient(
+    circle,
+    var(--beam-color-from, #F9DBBD) 0%,
+    var(--beam-color-to, #DA627D) 50%,
+    transparent 100%
+  );
+  filter: blur(4px);
+  offset-path: rect(0 auto auto 0 round var(--radius-lg, 12px));
+  animation: border-beam-orbit var(--beam-duration, 12s) infinite linear;
+  animation-delay: var(--beam-delay, 0s);
+}
+
+@keyframes border-beam-orbit {
+  100% {
+    offset-distance: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .border-beam::after {
+    animation: none;
+    opacity: 0.4;
+  }
+}

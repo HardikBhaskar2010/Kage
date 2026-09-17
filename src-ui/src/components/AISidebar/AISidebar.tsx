@@ -6,13 +6,19 @@ import {
   ChevronDown,
   Paperclip,
   SendHorizontal,
-  BarChart3,
-  Crosshair,
   Bug,
-  Zap,
-  FlaskConical,
   MessageSquare,
 } from "lucide-react";
+import {
+  KageIconScanner,
+  KageIconCodeFocus,
+  KageIconInspect,
+  KageIconPerformance,
+  KageIconConsole,
+  SpotlightCard,
+  BorderBeam,
+  ShimmerButton,
+} from "../ui";
 import { aiProviderRegistry } from "../../services/aiProviderDiscovery";
 import { isTauriEnvironment } from "../../adapters/BrowserAdapter";
 import { toolDispatch } from "../../ipc/client";
@@ -39,13 +45,13 @@ interface AISidebarProps {
 const ACTION_CARDS = [
   {
     id: "analyze",
-    icon: <BarChart3 size={18} strokeWidth={1.8} />,
+    icon: <KageIconScanner size={18} strokeWidth={1.8} />,
     title: "Analyze this page",
     desc: "Get a full performance, SEO and accessibility report",
   },
   {
     id: "explain",
-    icon: <Crosshair size={18} strokeWidth={1.8} />,
+    icon: <KageIconCodeFocus size={18} strokeWidth={1.8} />,
     title: "Explain selected element",
     desc: "Understand how it works",
   },
@@ -57,7 +63,7 @@ const ACTION_CARDS = [
   },
   {
     id: "test",
-    icon: <FlaskConical size={18} strokeWidth={1.8} />,
+    icon: <KageIconConsole size={18} strokeWidth={1.8} />,
     title: "Generate test",
     desc: "Create a Playwright test from this page",
   },
@@ -183,7 +189,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
       {/* ── Header ────────────────────────────────────────────── */}
       <div className="ai-sidebar__header">
         <div className="ai-sidebar__header-title">
-          <span className="ai-sidebar__brand-name">K A G E   A I</span>
+          <img src="/kage-logo.png" alt="KAGE" className="ai-sidebar__header-logo" />
+          <span className="ai-sidebar__header-ai">AI</span>
         </div>
         <button
           className="ai-sidebar__close-btn"
@@ -238,7 +245,8 @@ export const AISidebar: React.FC<AISidebarProps> = ({
               </div>
             ))}
             {isThinking && (
-              <div className="ai-chat-bubble ai-chat-bubble--assistant">
+              <div className="ai-chat-bubble ai-chat-bubble--assistant" style={{ position: "relative", overflow: "hidden" }}>
+                <BorderBeam size={160} duration={8} colorFrom="#FFA5AB" colorTo="#DA627D" />
                 <span className="ai-chat-bubble__sender">Kage AI</span>
                 <div className="ai-thinking-indicator">
                   <span /><span /><span />
@@ -258,11 +266,11 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                 I can help you with:
               </p>
               <ul className="ai-capabilities-list">
-                <li><span className="ai-cap-icon"><BarChart3 size={15} strokeWidth={1.8} /></span> Analyze any website</li>
-                <li><span className="ai-cap-icon"><Crosshair size={15} strokeWidth={1.8} /></span> Inspect elements</li>
+                <li><span className="ai-cap-icon"><KageIconScanner size={15} strokeWidth={1.8} /></span> Analyze any website</li>
+                <li><span className="ai-cap-icon"><KageIconInspect size={15} strokeWidth={1.8} /></span> Inspect elements</li>
                 <li><span className="ai-cap-icon"><Bug size={15} strokeWidth={1.8} /></span> Debug errors</li>
-                <li><span className="ai-cap-icon"><Zap size={15} strokeWidth={1.8} /></span> Optimize performance</li>
-                <li><span className="ai-cap-icon"><FlaskConical size={15} strokeWidth={1.8} /></span> Generate tests</li>
+                <li><span className="ai-cap-icon"><KageIconPerformance size={15} strokeWidth={1.8} /></span> Optimize performance</li>
+                <li><span className="ai-cap-icon"><KageIconConsole size={15} strokeWidth={1.8} /></span> Generate tests</li>
                 <li><span className="ai-cap-icon"><MessageSquare size={15} strokeWidth={1.8} /></span> Answer your questions</li>
               </ul>
             </div>
@@ -271,10 +279,12 @@ export const AISidebar: React.FC<AISidebarProps> = ({
               <h4 className="ai-action-cards__heading">What would you like to do?</h4>
               <div className="ai-action-cards-list">
                 {ACTION_CARDS.map((card) => (
-                  <button
+                  <SpotlightCard
                     key={card.id}
                     className="ai-action-card"
                     onClick={() => handleSend(card.title)}
+                    role="button"
+                    tabIndex={0}
                   >
                     <div className="ai-action-card__icon-box">
                       {card.icon}
@@ -284,7 +294,7 @@ export const AISidebar: React.FC<AISidebarProps> = ({
                       <span className="ai-action-card__desc">{card.desc}</span>
                     </div>
                     <ChevronRight size={15} strokeWidth={2} className="ai-action-card__arrow" />
-                  </button>
+                  </SpotlightCard>
                 ))}
               </div>
             </div>
@@ -344,15 +354,16 @@ export const AISidebar: React.FC<AISidebarProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              className="ai-send-btn"
+            <ShimmerButton
+              variant="primary"
+              size="sm"
               onClick={() => handleSend()}
               disabled={!input.trim() || isThinking}
               aria-label="Send message"
+              icon={<SendHorizontal size={14} strokeWidth={2} />}
             >
-              <SendHorizontal size={14} strokeWidth={2} />
-            </button>
+              Send
+            </ShimmerButton>
           </div>
         </div>
 

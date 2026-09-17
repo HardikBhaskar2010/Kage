@@ -135,6 +135,12 @@ export class CdpTelemetryProvider implements TelemetryProvider {
     };
   }
 
+  async inspectAtLocation(x: number, y: number): Promise<DomInspectNode | null> {
+    // Canonical coordinate-based pipeline:
+    // pointer coordinates (x, y) -> DOM.getNodeForLocation -> backendNodeId -> DOM.getBoxModel -> CSS.getComputedStyleForNode
+    return invoke<DomInspectNode | null>("inspect_at_location", { x: Math.round(x), y: Math.round(y) });
+  }
+
   async inspectElement(selector: string): Promise<DomInspectNode | null> {
     return invoke<DomInspectNode | null>("inspect_node", { selector });
   }

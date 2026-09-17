@@ -5,6 +5,7 @@ members = [
     "crates/kage-cdp",
     "crates/kage-storage",
     "crates/kage-context",
+    "crates/kage-plugin",
     "src-tauri",
 ]
 

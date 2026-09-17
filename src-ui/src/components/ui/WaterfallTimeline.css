@@ -1,0 +1,89 @@
+/**
+ * WaterfallTimeline Styles — Multi-phase segmented timing bar
+ */
+.waterfall-timeline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.waterfall-timeline__track {
+  display: flex;
+  height: 7px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  min-width: 8px;
+  transition: opacity 140ms ease-out;
+}
+
+.waterfall-timeline:hover .waterfall-timeline__track {
+  filter: brightness(1.25);
+  box-shadow: 0 0 6px rgba(218, 98, 125, 0.4);
+}
+
+.waterfall-timeline__segment {
+  height: 100%;
+  transition: width 160ms var(--ease-emil-out);
+}
+
+.waterfall-timeline__label {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  color: var(--color-text-secondary, #D8B8BA);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Tooltip internal details */
+.waterfall-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+  text-align: left;
+}
+
+.waterfall-tooltip__total {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--kage-peach, #F9DBBD);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 3px;
+  margin-bottom: 2px;
+}
+
+.waterfall-tooltip__phases {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.waterfall-tooltip__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  gap: 6px;
+}
+
+.waterfall-tooltip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.waterfall-tooltip__name {
+  color: var(--color-text-secondary, #D8B8BA);
+  flex: 1;
+}
+
+.waterfall-tooltip__ms {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-weight: 600;
+  color: var(--color-text-primary, #FCEDE0);
+}

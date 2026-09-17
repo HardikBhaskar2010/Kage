@@ -93,6 +93,17 @@
   box-shadow: 0 4px 18px rgba(218, 98, 125, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
+/* Specific glowing AI squircle pill matching Mockup_New Tab Screen.png */
+.sidebar-item--ai.sidebar-item--active {
+  background: linear-gradient(135deg, rgba(218, 98, 125, 0.55) 0%, rgba(165, 56, 96, 0.82) 100%);
+  border: 1px solid rgba(249, 219, 189, 0.55);
+  box-shadow: 0 0 22px rgba(218, 98, 125, 0.6), 0 0 35px rgba(249, 219, 189, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+.sidebar-item--ai.sidebar-item--active .sidebar-item__icon {
+  filter: drop-shadow(0 0 10px rgba(249, 219, 189, 0.85));
+}
+
 .sidebar-item--active .sidebar-item__icon {
   color: #FFFFFF;
   opacity: 1;
@@ -124,11 +135,18 @@
   padding: var(--space-2) 0 var(--space-1);
 }
 
-.icon-sidebar__brand-name {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: var(--color-text-secondary);
+.icon-sidebar__brand-logo {
+  width: 36px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 6px rgba(218, 98, 125, 0.45));
+  opacity: 0.85;
+  transition: opacity 160ms var(--ease-emil-out), filter 160ms var(--ease-emil-out);
+}
+
+.icon-sidebar__brand-logo:hover {
+  opacity: 1;
+  filter: drop-shadow(0 0 10px rgba(249, 219, 189, 0.65));
 }
 
 .icon-sidebar__brand-version {

@@ -1,0 +1,154 @@
+/**
+ * ShimmerButton Styles — Tactile spring response & sweeping light sheen
+ */
+.shimmer-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 8px);
+  border-radius: var(--radius-md, 8px);
+  font-family: var(--font-chrome, "Inter", sans-serif);
+  font-weight: var(--weight-medium, 500);
+  cursor: pointer;
+  overflow: hidden;
+  user-select: none;
+  border: 1px solid transparent;
+  outline: none;
+  /* Emil Kowalski rule: explicit transitions, never 'all' */
+  transition: transform 160ms var(--ease-emil-out, cubic-bezier(0.23, 1, 0.32, 1)),
+              box-shadow 160ms var(--ease-emil-out, cubic-bezier(0.23, 1, 0.32, 1)),
+              border-color 160ms var(--ease-emil-out, cubic-bezier(0.23, 1, 0.32, 1)),
+              background-color 160ms var(--ease-emil-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+/* Emil Kowalski rule: buttons must feel responsive to press */
+.shimmer-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.shimmer-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.shimmer-btn:focus-visible {
+  outline: 2px solid var(--kage-peach, #F9DBBD);
+  outline-offset: 2px;
+}
+
+/* Sizes */
+.shimmer-btn--sm {
+  padding: 5px 12px;
+  font-size: var(--text-xs, 11px);
+  height: 28px;
+}
+
+.shimmer-btn--md {
+  padding: 8px 16px;
+  font-size: var(--text-sm, 12px);
+  height: 36px;
+}
+
+.shimmer-btn--lg {
+  padding: 10px 20px;
+  font-size: var(--text-base, 14px);
+  height: 42px;
+}
+
+/* Variants */
+.shimmer-btn--primary {
+  background: linear-gradient(135deg, #DA627D 0%, #A53860 100%);
+  color: #FFFFFF;
+  border-color: rgba(249, 219, 189, 0.35);
+  box-shadow: 0 4px 14px rgba(218, 98, 125, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.shimmer-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #FFA5AB 0%, #DA627D 100%);
+  box-shadow: 0 6px 20px rgba(218, 98, 125, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.shimmer-btn--secondary {
+  background: var(--color-surface-2, #3A1421);
+  color: var(--color-text-primary, #FCEDE0);
+  border-color: var(--color-border-subtle, rgba(122, 58, 82, 0.5));
+}
+
+.shimmer-btn--secondary:hover:not(:disabled) {
+  background: var(--color-surface-3, #5A2A3A);
+  border-color: var(--color-border-strong, rgba(218, 98, 125, 0.5));
+}
+
+.shimmer-btn--glass {
+  background: rgba(249, 219, 189, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--color-text-primary, #FCEDE0);
+  border-color: rgba(249, 219, 189, 0.2);
+}
+
+.shimmer-btn--glass:hover:not(:disabled) {
+  background: rgba(249, 219, 189, 0.14);
+  border-color: rgba(249, 219, 189, 0.4);
+}
+
+.shimmer-btn--danger {
+  background: linear-gradient(135deg, #e11d48 0%, #9f1239 100%);
+  color: #FFFFFF;
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.shimmer-btn--danger:hover:not(:disabled) {
+  background: linear-gradient(135deg, #f43f5e 0%, #be123c 100%);
+}
+
+/* Shimmer Light Sweep */
+.shimmer-btn__sweep {
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--shimmer-color, rgba(255, 255, 255, 0.2)) 50%,
+    transparent 100%
+  );
+  transform: skewX(-20deg);
+  animation: shimmer-travel 4s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes shimmer-travel {
+  0% {
+    left: -100%;
+  }
+  30%, 100% {
+    left: 200%;
+  }
+}
+
+.shimmer-btn__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.shimmer-btn__label {
+  display: inline-block;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-btn__sweep {
+    animation: none;
+    display: none;
+  }
+  .shimmer-btn:active {
+    transform: none;
+  }
+}

@@ -1,25 +1,55 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./PerformancePanel.css";
 import { Activity, Cpu, Gauge, Zap } from "lucide-react";
+import { BklitMetricCard, BorderBeam } from "../ui";
+import { useBrowser } from "../../context/BrowserContext";
+
+interface PerfState {
+  fps: number;
+  memoryUsed: number;
+  fpsHistory: number[];
+  memHistory: number[];
+}
 
 export const PerformancePanel: React.FC = () => {
+  const { devToolsOpen } = useBrowser();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [fps, setFps] = useState(120);
-  const [memoryUsed, setMemoryUsed] = useState(64.2); // MB
+  const [metrics, setMetrics] = useState<PerfState>(() => ({
+    fps: 120,
+    memoryUsed: 64.2,
+    fpsHistory: new Array(24).fill(118).map(() => 116 + Math.round(Math.random() * 4)),
+    memHistory: new Array(24).fill(62).map((v, i) => v + Math.sin(i / 3) * 3),
+  }));
 
   useEffect(() => {
+    if (!devToolsOpen) return;
+
     let animId: number;
     let lastTime = performance.now();
     let frameCount = 0;
     const history: number[] = new Array(60).fill(120);
 
     const tick = (now: number) => {
+      // Pause completely if document is hidden (user minimized or tab switched away)
+      if (document.hidden) {
+        animId = requestAnimationFrame(tick);
+        return;
+      }
+
       frameCount++;
       if (now - lastTime >= 500) {
         const measuredFps = Math.round((frameCount * 1000) / (now - lastTime));
         const clampedFps = Math.min(120, Math.max(58, measuredFps));
-        setFps(clampedFps);
-        setMemoryUsed(62 + Math.sin(now / 3000) * 4);
+        const mem = 62 + Math.sin(now / 3000) * 4;
+
+        // Single batched state update prevents 4 cascading React render passes
+        setMetrics((prev) => ({
+          fps: clampedFps,
+          memoryUsed: mem,
+          fpsHistory: [...prev.fpsHistory.slice(1), clampedFps],
+          memHistory: [...prev.memHistory.slice(1), mem],
+        }));
+
         history.shift();
         history.push(clampedFps);
         frameCount = 0;
@@ -81,51 +111,66 @@ export const PerformancePanel: React.FC = () => {
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, []);
+  }, [devToolsOpen]);
+
+  const { fps, memoryUsed, fpsHistory, memHistory } = metrics;
 
   return (
     <div className="perf-panel" role="region" aria-label="Performance Monitor">
-      {/* ── Metric Cards ────────────────────────────────────────── */}
+      {/* ── Bklit UI Composable Metric HUD Cards ─────────────────────── */}
       <div className="perf-cards">
-        <div className="perf-card">
-          <div className="perf-card__icon"><Gauge size={16} strokeWidth={2} /></div>
-          <div className="perf-card__meta">
-            <span className="perf-card__label">Frame Rate</span>
-            <span className="perf-card__val perf-card__val--fps">{fps} <small>FPS</small></span>
-          </div>
-          <span className="perf-badge perf-badge--good">Target: 120 FPS</span>
-        </div>
+        <BklitMetricCard
+          title="Frame Rate"
+          value={fps}
+          unit="FPS"
+          icon={<Gauge size={15} strokeWidth={2} />}
+          status={fps >= 100 ? "good" : fps >= 60 ? "warn" : "crit"}
+          badgeText="ProMotion 120"
+          sparklineData={fpsHistory}
+          sparklineColor="#78d4a0"
+          delta="0.2%"
+          deltaPositive={true}
+        />
 
-        <div className="perf-card">
-          <div className="perf-card__icon"><Cpu size={16} strokeWidth={2} /></div>
-          <div className="perf-card__meta">
-            <span className="perf-card__label">RAM Footprint</span>
-            <span className="perf-card__val">{memoryUsed.toFixed(1)} <small>MB</small></span>
-          </div>
-          <span className="perf-badge perf-badge--good">Budget: &lt;150 MB</span>
-        </div>
+        <BklitMetricCard
+          title="RAM Footprint"
+          value={memoryUsed.toFixed(1)}
+          unit="MB"
+          icon={<Cpu size={15} strokeWidth={2} />}
+          status="good"
+          badgeText="< 150 MB"
+          sparklineData={memHistory}
+          sparklineColor="#DA627D"
+          delta="1.4 MB"
+          deltaPositive={false}
+        />
 
-        <div className="perf-card">
-          <div className="perf-card__icon"><Zap size={16} strokeWidth={2} /></div>
-          <div className="perf-card__meta">
-            <span className="perf-card__label">LCP (Paint)</span>
-            <span className="perf-card__val">0.82 <small>s</small></span>
-          </div>
-          <span className="perf-badge perf-badge--good">Good (&lt;2.5s)</span>
-        </div>
+        <BklitMetricCard
+          title="LCP (Paint)"
+          value="0.82"
+          unit="s"
+          icon={<Zap size={15} strokeWidth={2} />}
+          status="good"
+          badgeText="Target < 2.5s"
+          delta="40ms"
+          deltaPositive={true}
+        />
 
-        <div className="perf-card">
-          <div className="perf-card__icon"><Activity size={16} strokeWidth={2} /></div>
-          <div className="perf-card__meta">
-            <span className="perf-card__label">FID (Input)</span>
-            <span className="perf-card__val">12 <small>ms</small></span>
-          </div>
-          <span className="perf-badge perf-badge--good">Fast (&lt;100ms)</span>
-        </div>
+        <BklitMetricCard
+          title="FID (Input)"
+          value="12"
+          unit="ms"
+          icon={<Activity size={15} strokeWidth={2} />}
+          status="good"
+          badgeText="Target < 100ms"
+          delta="2ms"
+          deltaPositive={true}
+        />
       </div>
 
-      {/* ── Realtime Canvas Graph ───────────────────────────────── */}
-      <div className="perf-chart-wrap">
+      {/* ── Realtime Compositor Frame Stability with Skiper UI BorderBeam ── */}
+      <div className="perf-chart-wrap" style={{ position: "relative", overflow: "hidden" }}>
+        <BorderBeam size={240} duration={14} colorFrom="#F9DBBD" colorTo="#DA627D" />
         <div className="perf-chart-header">
           <span className="perf-chart-title">Realtime Compositor Frame Stability</span>
           <span className="perf-chart-sub">Hardware Accelerated DirectComposition / Vulkan</span>
@@ -135,3 +180,4 @@ export const PerformancePanel: React.FC = () => {
     </div>
   );
 };
+

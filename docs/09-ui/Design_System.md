@@ -217,3 +217,23 @@ Animations in KAGE are crisp, mechanical, and physics-grounded:
 - **Surface Testing Protocol:** Contrast ratios must be verified for each semantic text token against representative light and worst-case dark composited glass backgrounds before release.
 - **Focus Rings:** Visible, high-contrast 2px ring in `--kage-accent` with 2px offset on keyboard `Tab` navigation.
 - **ARIA Semantics:** Complete semantic structure across shell (`role="tablist"`, `role="tab"`, `role="dialog"`, `aria-live`).
+
+---
+
+## 10. Design System Governance & Component Hierarchy
+
+To maintain architectural integrity, accessibility, performance, and theme consistency, KAGE establishes a strict top-down component governance model:
+
+```text
+KAGE Design Tokens (docs/09-ui/Design_System.md)
+        ↓
+KAGE UI Primitives (src-ui/src/components/ui/)
+        ↓
+Visual & Micro-Interaction Implementations
+```
+
+### Governance Principles
+1. **Zero External Component Dependencies:** KAGE UI primitives (`BorderBeam`, `SpotlightCard`, `SmartTooltip`, `ShimmerButton`, `SparklineChart`, `BklitMetricCard`, `WaterfallTimeline`) are 100% first-party native KAGE components authored in React and vanilla CSS. They do not depend on external UI component packages.
+2. **Design Inspirations vs. Engineering Specs:** References to external design patterns (e.g., Skiper UI, Unlumen UI, Bklit UI, Apple HIG, or Emil Kowalski's motion standards) represent **craft benchmarks and visual inspirations**, not formal engineering constraints or external runtime dependencies.
+3. **Token Invariant:** Every component must derive its color, border, typography, elevation, and easing exclusively from canonical KAGE tokens defined in `tokens.css`.
+

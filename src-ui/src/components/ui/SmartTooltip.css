@@ -1,0 +1,138 @@
+/**
+ * SmartTooltip Styles — Emil Kowalski origin-aware micro-tooltips
+ */
+.smart-tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.smart-tooltip {
+  position: absolute;
+  z-index: var(--z-toast, 70);
+  padding: 4px 8px;
+  background: rgba(30, 8, 18, 0.94);
+  color: var(--color-text-primary, #FCEDE0);
+  border: 1px solid rgba(218, 98, 125, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 8px rgba(218, 98, 125, 0.2);
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-chrome, "Inter", sans-serif);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  transform-origin: var(--tooltip-origin, center bottom);
+  
+  /* Emil Kowalski rule: Never animate from scale(0). Start from scale(0.95) with opacity */
+  animation: tooltip-in 140ms var(--ease-emil-out, cubic-bezier(0.23, 1, 0.32, 1)) forwards;
+}
+
+/* Emil Kowalski rule: skip animation on subsequent adjacent tooltips */
+.smart-tooltip--instant {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* Positions */
+.smart-tooltip--top {
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+}
+
+.smart-tooltip--bottom {
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+}
+
+.smart-tooltip--left {
+  right: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+}
+
+.smart-tooltip--right {
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+}
+
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.smart-tooltip--top {
+  animation-name: tooltip-in-top;
+}
+
+.smart-tooltip--bottom {
+  animation-name: tooltip-in-bottom;
+}
+
+.smart-tooltip--left {
+  animation-name: tooltip-in-left;
+}
+
+.smart-tooltip--right {
+  animation-name: tooltip-in-right;
+}
+
+@keyframes tooltip-in-top {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.95) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1) translateY(0);
+  }
+}
+
+@keyframes tooltip-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.95) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1) translateY(0);
+  }
+}
+
+@keyframes tooltip-in-left {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.95) translateX(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scale(1) translateX(0);
+  }
+}
+
+@keyframes tooltip-in-right {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.95) translateX(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scale(1) translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smart-tooltip {
+    animation: none;
+    opacity: 1;
+  }
+}

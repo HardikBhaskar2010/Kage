@@ -1,32 +1,54 @@
 /* ─── KAGE AI Panel (Docked on the left beside IconSidebar) ────────── */
 .ai-sidebar {
-  width: var(--ai-sidebar-w);
-  min-width: var(--ai-sidebar-w);
-  flex-shrink: 0;
+  position: absolute;
+  left: var(--sidebar-width, 54px);
+  top: 0;
+  bottom: 0;
+  width: var(--ai-sidebar-w, 360px);
   height: 100%;
-  margin-left: 0;
   border-right: 1px solid var(--glass-border);
   background: var(--glass-bg-panel);
   backdrop-filter: var(--glass-blur-lg);
   -webkit-backdrop-filter: var(--glass-blur-lg);
-  z-index: 10;
+  z-index: 25;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: margin-left 280ms var(--ease-emil-drawer),
-              opacity 200ms var(--ease-emil-out),
-              box-shadow 280ms var(--ease-emil-drawer);
-}
-
-.ai-sidebar:not(.ai-sidebar--open) {
-  margin-left: calc(-1 * var(--ai-sidebar-w));
-  opacity: 0;
-  pointer-events: none;
-  border-right-color: transparent;
-}
-
-.ai-sidebar--open {
+  contain: layout style;
+  will-change: transform, opacity, filter;
+  transform: translate3d(0, 0, 0) scale(1);
+  opacity: 1;
+  filter: none;
+  visibility: visible;
   box-shadow: 12px 0 40px rgba(10, 2, 7, 0.65);
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 200ms cubic-bezier(0.16, 1, 0.3, 1),
+              filter 240ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Closed state with real GPU-accelerated optical motion blur and visibility detachment */
+.ai-sidebar:not(.ai-sidebar--open) {
+  transform: translate3d(-102%, 0, 0) scale(0.98);
+  opacity: 0;
+  filter: blur(10px);
+  pointer-events: none;
+  visibility: hidden;
+  box-shadow: none;
+  border-right-color: transparent;
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 200ms cubic-bezier(0.16, 1, 0.3, 1),
+              filter 240ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0s 260ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-sidebar {
+    transform: none !important;
+    filter: none !important;
+    transition: opacity 160ms ease !important;
+  }
 }
 
 /* ─── Header ──────────────────────────────────────────────────────── */
@@ -39,12 +61,30 @@
   flex-shrink: 0;
 }
 
-.ai-sidebar__brand-name {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.22em;
+.ai-sidebar__header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-sidebar__header-logo {
+  height: 18px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(218, 98, 125, 0.45));
+}
+
+.ai-sidebar__header-ai {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   color: var(--color-peach);
-  text-transform: uppercase;
+  background: rgba(218, 98, 125, 0.22);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(249, 219, 189, 0.25);
+  line-height: 1.2;
 }
 
 .ai-sidebar__close-btn {

@@ -10,8 +10,10 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  Save,
 } from "lucide-react";
 import { aiProviderRegistry } from "../../services/aiProviderDiscovery";
+import { SpotlightCard, ShimmerButton, BorderBeam } from "../ui";
 
 export const SettingsPage: React.FC = () => {
   const {
@@ -286,7 +288,8 @@ export const SettingsPage: React.FC = () => {
             {activeTab === "about" && (
               <div className="settings-section">
                 <h2>About KAGE (影)</h2>
-                <div className="about-card">
+                <SpotlightCard className="about-card" style={{ position: "relative", overflow: "hidden" }}>
+                  <BorderBeam size={220} duration={12} colorFrom="#F9DBBD" colorTo="#DA627D" />
                   <div className="about-logo-row">
                     <img src="/Logo.png" alt="KAGE" className="about-logo" />
                     <div>
@@ -325,9 +328,21 @@ export const SettingsPage: React.FC = () => {
                       GitHub Repository
                     </a>
                   </div>
-                </div>
+                </SpotlightCard>
               </div>
             )}
+
+            {/* Save Preferences Action */}
+            <div style={{ marginTop: "24px", display: "flex", justifyContent: "flex-end" }}>
+              <ShimmerButton
+                variant="primary"
+                size="md"
+                icon={<Save size={15} />}
+                onClick={handleSave}
+              >
+                Save Preferences
+              </ShimmerButton>
+            </div>
 
             {/* Notification alert on save */}
             {savedAlert && (

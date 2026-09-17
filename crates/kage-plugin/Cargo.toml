@@ -1,0 +1,15 @@
+[package]
+name = "kage-plugin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Sandboxed Wasm plugin runtime and capability broker for KAGE"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tokio = { version = "1", features = ["full"] }

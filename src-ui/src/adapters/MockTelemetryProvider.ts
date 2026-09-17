@@ -36,9 +36,34 @@ export class MockTelemetryProvider implements TelemetryProvider {
     };
   }
 
+  async inspectAtLocation(x: number, y: number): Promise<DomInspectNode | null> {
+    const backendNodeId = 100 + Math.abs(Math.round(x + y) % 50);
+    return {
+      backendNodeId,
+      selector: `div.kage-surface#node-${backendNodeId}`,
+      tag: "DIV",
+      classes: ["kage-surface", "liquid-glass-surface"],
+      attributes: { "aria-label": `Inspected at (${Math.round(x)}, ${Math.round(y)})`, role: "region" },
+      boxModel: {
+        margin: [4, 4, 4, 4],
+        border: [1, 1, 1, 1],
+        padding: [8, 16, 8, 16],
+        dimensions: { width: 240, height: 48 },
+      },
+      computedStyles: {
+        display: "block",
+        background: "rgba(43, 14, 22, 0.75)",
+        color: "#F9DBBD",
+        backdropFilter: "blur(20px)",
+        borderRadius: "8px",
+      },
+    };
+  }
+
   async inspectElement(selector: string): Promise<DomInspectNode | null> {
     return {
-      id: `node-${Date.now()}`,
+      backendNodeId: 42,
+      selector,
       tag: selector.startsWith("#") ? "DIV" : "BUTTON",
       classes: ["liquid-glass-btn", "kage-interactive"],
       attributes: { "aria-label": "Inspected Element", role: "button" },

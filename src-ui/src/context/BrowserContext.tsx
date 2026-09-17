@@ -311,8 +311,23 @@ let tabIdCounter = 2;
 export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tabs, setTabs] = useState<TabState[]>(INITIAL_TABS);
   const [activeTabId, setActiveTabId] = useState<string>("tab-1");
-  const [activeTool, setActiveTool] = useState<ActiveTool>("home");
-  const [aiOpen, setAiOpen] = useState(false);
+  const [activeTool, setActiveToolRaw] = useState<ActiveTool>("home");
+  const [aiOpen, setAiOpenRaw] = useState(false);
+
+  // Synchronized state architecture (Apple Design & Emil Kowalski Design Engineering)
+  // Single Source of Truth: Drawer visibility and rail tab state are 100% mutually consistent.
+  const setActiveTool = useCallback((tool: ActiveTool) => {
+    setActiveToolRaw(tool);
+    setAiOpenRaw(tool === "ai");
+  }, []);
+
+  const setAiOpen = useCallback((open: boolean) => {
+    setAiOpenRaw(open);
+    setActiveToolRaw((prev) => {
+      if (open) return "ai";
+      return prev === "ai" ? "home" : prev;
+    });
+  }, []);
   const [devToolsOpen, setDevToolsOpen] = useState(false);
   const [inspectMode, setInspectMode] = useState(false);
 

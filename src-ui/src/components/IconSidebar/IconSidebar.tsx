@@ -1,6 +1,8 @@
 import React from "react";
 import "./IconSidebar.css";
 
+import { SmartTooltip } from "../ui";
+
 export type SidebarItem = {
   id: string;
   icon: React.ReactNode;
@@ -22,21 +24,21 @@ export const IconSidebar: React.FC<IconSidebarProps> = ({
   activeId,
 }) => {
   const renderItem = (item: SidebarItem) => (
-    <button
-      key={item.id}
-      className={`sidebar-item ${activeId === item.id ? "sidebar-item--active" : ""}`}
-      onClick={() => onSelect(item.id)}
-      aria-label={item.label}
-      aria-current={activeId === item.id ? "page" : undefined}
-      id={`sidebar-${item.id}`}
-      title={item.label}
-    >
-      <span className="sidebar-item__icon" aria-hidden="true">
-        {item.icon}
-      </span>
-      {/* Visible micro-label below icon — matches mockup */}
-      <span className="sidebar-item__label">{item.label}</span>
-    </button>
+    <SmartTooltip key={item.id} content={item.label} position="right">
+      <button
+        className={`sidebar-item sidebar-item--${item.id} ${activeId === item.id ? "sidebar-item--active" : ""}`}
+        onClick={() => onSelect(item.id)}
+        aria-label={item.label}
+        aria-current={activeId === item.id ? "page" : undefined}
+        id={`sidebar-${item.id}`}
+      >
+        <span className="sidebar-item__icon" aria-hidden="true">
+          {item.icon}
+        </span>
+        {/* Visible micro-label below icon — matches mockup */}
+        <span className="sidebar-item__label">{item.label}</span>
+      </button>
+    </SmartTooltip>
   );
 
   return (
@@ -52,7 +54,7 @@ export const IconSidebar: React.FC<IconSidebarProps> = ({
         <div className="icon-sidebar__bottom">
           {bottomItems.map(renderItem)}
           <div className="icon-sidebar__brand">
-            <span className="icon-sidebar__brand-name">K A G E</span>
+            <img src="/kage-logo.png" alt="KAGE" className="icon-sidebar__brand-logo" />
             <span className="icon-sidebar__brand-version">v0.1.0</span>
           </div>
         </div>

@@ -58,9 +58,10 @@ export const MicroInspectOverlay: React.FC = () => {
 
       if (hoveredEl) {
         setPinnedEl(hoveredEl);
-        const selector = `${hoveredEl.tag}${hoveredEl.className ? `.${hoveredEl.className}` : ""}`;
+        // Canonical Micro Inspect Pipeline:
+        // pointer coordinates -> DOM.getNodeForLocation -> backendNodeId -> DOM.getBoxModel -> CSS.getComputedStyleForNode
         getTelemetryProvider()
-          .inspectElement(selector)
+          .inspectAtLocation(e.clientX, e.clientY)
           .then((node) => {
             if (node) {
               setPinnedEl((prev) =>

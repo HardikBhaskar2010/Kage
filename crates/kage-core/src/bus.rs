@@ -29,7 +29,7 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use crate::policy::{PolicyContext, PolicyDecision, PolicyEngine, PermissionTier};
+use crate::policy::{PolicyContext, PolicyDecision, PolicyEngine};
 use crate::sanitizer::SecretSanitizer;
 use crate::tool::{KageTool, ToolError, ToolRequest, ToolResponse};
 

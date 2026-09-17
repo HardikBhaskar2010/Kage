@@ -25,7 +25,9 @@ export interface DomBoxModel {
 }
 
 export interface DomInspectNode {
-  id: string;
+  id?: string;
+  backendNodeId?: number;
+  selector: string;
   tag: string;
   classes: string[];
   attributes: Record<string, string>;
@@ -44,7 +46,9 @@ export interface TelemetryProvider {
   onConsoleMessage(cb: (entry: ConsoleEntry) => void): () => void;
   /** Subscribe to network request waterfall stream */
   onNetworkRequest(cb: (entry: NetworkEntry) => void): () => void;
-  /** Query live DOM tree or inspect specific node */
+  /** Canonical Micro Inspect: pointer coordinates -> DOM.getNodeForLocation -> backendNodeId */
+  inspectAtLocation(x: number, y: number): Promise<DomInspectNode | null>;
+  /** Query live DOM tree or inspect specific node by selector fallback */
   inspectElement(selector: string): Promise<DomInspectNode | null>;
   /** Subscribe to real-time FPS and memory metrics */
   onPerformanceMetric(cb: (sample: PerfSample) => void): () => void;

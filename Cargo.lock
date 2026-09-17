@@ -1811,8 +1811,21 @@ dependencies = [
  "tauri-build",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "kage-plugin"
+version = "0.2.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1827,6 +1840,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.20",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

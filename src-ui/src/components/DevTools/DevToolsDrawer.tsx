@@ -8,12 +8,14 @@ import { PerformancePanel } from "./PerformancePanel";
 import { StoragePanel } from "./StoragePanel";
 import { SecurityPanel } from "./SecurityPanel";
 import {
-  Terminal,
-  Activity,
-  Layers,
-  Gauge,
-  Database,
-  ShieldCheck,
+  KageIconConsole,
+  KageIconNetwork,
+  KageIconDOM,
+  KageIconPerformance,
+  KageIconStorage,
+  KageIconSecurity,
+} from "../ui";
+import {
   X,
   Maximize2,
   Minimize2,
@@ -57,7 +59,7 @@ export const DevToolsDrawer: React.FC = () => {
             aria-selected={activeTab === "console"}
           >
             <span className="devtools-tab__icon devtools-tab__icon--console">
-              <Terminal size={12} strokeWidth={2} />
+              <KageIconConsole size={13} />
             </span>
             <span>Console</span>
             <span className="devtools-tab__badge devtools-tab__badge--info">1</span>
@@ -69,7 +71,7 @@ export const DevToolsDrawer: React.FC = () => {
             aria-selected={activeTab === "network"}
           >
             <span className="devtools-tab__icon devtools-tab__icon--network">
-              <Activity size={12} strokeWidth={2} />
+              <KageIconNetwork size={13} />
             </span>
             <span>Network</span>
             <span className="devtools-tab__badge devtools-tab__badge--live">LIVE</span>
@@ -81,7 +83,7 @@ export const DevToolsDrawer: React.FC = () => {
             aria-selected={activeTab === "dom"}
           >
             <span className="devtools-tab__icon devtools-tab__icon--dom">
-              <Layers size={12} strokeWidth={2} />
+              <KageIconDOM size={13} />
             </span>
             <span>Elements</span>
           </button>
@@ -92,7 +94,7 @@ export const DevToolsDrawer: React.FC = () => {
             aria-selected={activeTab === "performance"}
           >
             <span className="devtools-tab__icon devtools-tab__icon--perf">
-              <Gauge size={12} strokeWidth={2} />
+              <KageIconPerformance size={13} />
             </span>
             <span>Performance</span>
             <span className="devtools-tab__badge devtools-tab__badge--fps">120 FPS</span>
@@ -104,7 +106,7 @@ export const DevToolsDrawer: React.FC = () => {
             aria-selected={activeTab === "storage"}
           >
             <span className="devtools-tab__icon devtools-tab__icon--storage">
-              <Database size={12} strokeWidth={2} />
+              <KageIconStorage size={13} />
             </span>
             <span>Storage</span>
           </button>
@@ -115,7 +117,7 @@ export const DevToolsDrawer: React.FC = () => {
             aria-selected={activeTab === "security"}
           >
             <span className="devtools-tab__icon devtools-tab__icon--sec">
-              <ShieldCheck size={12} strokeWidth={2} />
+              <KageIconSecurity size={13} />
             </span>
             <span>Security</span>
             <span className="devtools-tab__badge devtools-tab__badge--sec">TLS 1.3</span>
@@ -145,14 +147,18 @@ export const DevToolsDrawer: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Active Panel View ──────────────────────────────────── */}
+      {/* ── Active Panel View with Smooth Motion Blur Entrance ── */}
       <div className="devtools-content">
-        {activeTab === "console" && <ConsolePanel />}
-        {activeTab === "network" && <NetworkPanel />}
-        {activeTab === "dom" && <ElementsPanel />}
-        {activeTab === "performance" && <PerformancePanel />}
-        {activeTab === "storage" && <StoragePanel />}
-        {activeTab === "security" && <SecurityPanel />}
+        {devToolsOpen && (
+          <div key={activeTab} className="devtools-panel-enter">
+            {activeTab === "console" && <ConsolePanel />}
+            {activeTab === "network" && <NetworkPanel />}
+            {activeTab === "dom" && <ElementsPanel />}
+            {activeTab === "performance" && <PerformancePanel />}
+            {activeTab === "storage" && <StoragePanel />}
+            {activeTab === "security" && <SecurityPanel />}
+          </div>
+        )}
       </div>
     </section>
   );

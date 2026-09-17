@@ -9,6 +9,7 @@
   padding: 12px;
   gap: 14px;
   overflow-y: auto;
+  contain: content;
 }
 
 /* ─── Metric Cards ─────────────────────────────────────────────────── */
@@ -34,6 +35,10 @@
 .perf-card:hover {
   transform: translateY(-2px);
   border-color: rgba(249, 219, 189, 0.3);
+}
+
+.perf-card:active {
+  transform: scale(0.98);
 }
 
 .perf-card__icon {

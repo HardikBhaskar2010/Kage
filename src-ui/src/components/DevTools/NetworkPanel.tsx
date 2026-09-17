@@ -3,6 +3,7 @@ import "./NetworkPanel.css";
 import { useBrowser } from "../../context/BrowserContext";
 import type { NetworkRequest } from "../../context/BrowserContext";
 import { Search, Trash2, X } from "lucide-react";
+import { WaterfallTimeline } from "../ui";
 
 export const NetworkPanel: React.FC = () => {
   const { networkRequests, clearNetworkRequests } = useBrowser();
@@ -102,13 +103,7 @@ export const NetworkPanel: React.FC = () => {
                     <td className="net-type">{req.type}</td>
                     <td className="net-size">{req.size}</td>
                     <td>
-                      <div className="net-waterfall">
-                        <div
-                          className="net-waterfall-bar"
-                          style={{ width: `${Math.min(100, (req.time / 400) * 100)}%` }}
-                        />
-                        <span className="net-waterfall-time">{req.time}ms</span>
-                      </div>
+                      <WaterfallTimeline totalMs={req.time} maxScaleMs={400} />
                     </td>
                   </tr>
                 );

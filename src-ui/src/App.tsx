@@ -2,21 +2,23 @@ import React, { useState, useEffect, useRef } from "react";
 import "./App.css";
 
 import {
-  Home,
-  Sparkles,
-  ScanEye,
-  Layers,
-  Network,
-  Activity,
-  Terminal,
-  Database,
-  ShieldCheck,
-  Blocks,
-  Settings,
   Minus,
   Square,
   X,
 } from "lucide-react";
+import {
+  KageIconHome,
+  KageIconAI,
+  KageIconInspect,
+  KageIconDOM,
+  KageIconNetwork,
+  KageIconPerformance,
+  KageIconConsole,
+  KageIconStorage,
+  KageIconSecurity,
+  KageIconExtensions,
+  KageIconSettings,
+} from "./components/ui";
 
 import { BrowserProvider, useBrowser } from "./context/BrowserContext";
 import type { ActiveTool } from "./context/BrowserContext";
@@ -34,22 +36,22 @@ import { DownloadsPopover } from "./components/Downloads/DownloadsPopover";
 import { ExtensionsPage } from "./components/Extensions/ExtensionsPage";
 import { SettingsPage } from "./components/Settings/SettingsPage";
 
-// ─── Sidebar Items with Crisp Lucide Icons ────────────────────────────
+// ─── Sidebar Items with Canonical KAGE Vector Icons (Linear + Filled) ────
 const SIDEBAR_ITEMS: SidebarItem[] = [
-  { id: "home",        icon: <Home size={18} strokeWidth={1.8} />,        label: "Home" },
-  { id: "ai",          icon: <Sparkles size={18} strokeWidth={1.8} />,    label: "AI" },
-  { id: "inspect",     icon: <ScanEye size={18} strokeWidth={1.8} />,     label: "Inspect" },
-  { id: "dom",         icon: <Layers size={18} strokeWidth={1.8} />,      label: "DOM" },
-  { id: "network",     icon: <Network size={18} strokeWidth={1.8} />,     label: "Network" },
-  { id: "performance", icon: <Activity size={18} strokeWidth={1.8} />,    label: "Performance" },
-  { id: "console",     icon: <Terminal size={18} strokeWidth={1.8} />,    label: "Console" },
-  { id: "storage",     icon: <Database size={18} strokeWidth={1.8} />,    label: "Storage" },
-  { id: "security",    icon: <ShieldCheck size={18} strokeWidth={1.8} />, label: "Security" },
-  { id: "extensions",  icon: <Blocks size={18} strokeWidth={1.8} />,      label: "Extensions" },
+  { id: "home",        icon: <KageIconHome size={18} strokeWidth={1.8} />,        label: "Home" },
+  { id: "ai",          icon: <KageIconAI size={18} strokeWidth={1.8} />,          label: "AI" },
+  { id: "inspect",     icon: <KageIconInspect size={18} strokeWidth={1.8} />,     label: "Inspect" },
+  { id: "dom",         icon: <KageIconDOM size={18} strokeWidth={1.8} />,         label: "DOM" },
+  { id: "network",     icon: <KageIconNetwork size={18} strokeWidth={1.8} />,     label: "Network" },
+  { id: "performance", icon: <KageIconPerformance size={18} strokeWidth={1.8} />, label: "Performance" },
+  { id: "console",     icon: <KageIconConsole size={18} strokeWidth={1.8} />,     label: "Console" },
+  { id: "storage",     icon: <KageIconStorage size={18} strokeWidth={1.8} />,     label: "Storage" },
+  { id: "security",    icon: <KageIconSecurity size={18} strokeWidth={1.8} />,    label: "Security" },
+  { id: "extensions",  icon: <KageIconExtensions size={18} strokeWidth={1.8} />,  label: "Extensions" },
 ];
 
 const SIDEBAR_BOTTOM: SidebarItem[] = [
-  { id: "settings",    icon: <Settings size={18} strokeWidth={1.8} />,    label: "Settings" },
+  { id: "settings",    icon: <KageIconSettings size={18} strokeWidth={1.8} />,    label: "Settings" },
 ];
 
 const AppInner: React.FC = () => {
@@ -83,33 +85,75 @@ const AppInner: React.FC = () => {
   const viewportStageRef = useRef<HTMLDivElement>(null);
 
   // Synchronize viewport stage coordinates to native CEF child window (KAGE-ARCH-002)
+  // Debounced and throttled to prevent IPC stalls and GPU thread lockups during smooth transitions
   useEffect(() => {
     const el = viewportStageRef.current;
     if (!el) return;
 
-    const syncBounds = () => {
+    let lastSent = { x: -1, y: -1, width: -1, height: -1, scaleFactor: -1 };
+    let rafId: number | null = null;
+    let settleTimer: number | null = null;
+
+    const performSync = () => {
       const rect = el.getBoundingClientRect();
       const scaleFactor = window.devicePixelRatio || 1;
+      const nextX = Math.round(rect.left * scaleFactor);
+      const nextY = Math.round(rect.top * scaleFactor);
+      const nextW = Math.round(rect.width * scaleFactor);
+      const nextH = Math.round(rect.height * scaleFactor);
+
+      // Skip IPC entirely if bounds have not changed
+      if (
+        nextX === lastSent.x &&
+        nextY === lastSent.y &&
+        nextW === lastSent.width &&
+        nextH === lastSent.height &&
+        scaleFactor === lastSent.scaleFactor
+      ) {
+        return;
+      }
+
+      lastSent = { x: nextX, y: nextY, width: nextW, height: nextH, scaleFactor };
       getBrowserAdapter().syncViewportBounds({
-        x: Math.round(rect.left * scaleFactor),
-        y: Math.round(rect.top * scaleFactor),
-        width: Math.round(rect.width * scaleFactor),
-        height: Math.round(rect.height * scaleFactor),
+        x: nextX,
+        y: nextY,
+        width: nextW,
+        height: nextH,
         scale_factor: scaleFactor,
       }).catch(() => {});
     };
 
+    const scheduleSync = () => {
+      // Settle timer fires once animation completes (280ms)
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer);
+      }
+      settleTimer = window.setTimeout(() => {
+        performSync();
+      }, 280);
+
+      // Throttle IPC with requestAnimationFrame during active movement
+      if (rafId === null) {
+        rafId = window.requestAnimationFrame(() => {
+          rafId = null;
+          performSync();
+        });
+      }
+    };
+
     const observer = new ResizeObserver(() => {
-      syncBounds();
+      scheduleSync();
     });
 
     observer.observe(el);
-    window.addEventListener("resize", syncBounds);
-    syncBounds();
+    window.addEventListener("resize", scheduleSync);
+    performSync();
 
     return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      if (settleTimer !== null) window.clearTimeout(settleTimer);
       observer.disconnect();
-      window.removeEventListener("resize", syncBounds);
+      window.removeEventListener("resize", scheduleSync);
     };
   }, []);
 
@@ -121,7 +165,6 @@ const AppInner: React.FC = () => {
   const handleSidebarSelect = (id: string) => {
     if (id === "ai") {
       setAiOpen(!aiOpen);
-      setActiveTool(aiOpen ? "home" : "ai");
       return;
     }
 
@@ -135,6 +178,7 @@ const AppInner: React.FC = () => {
     if (id === "inspect") {
       setInspectMode(true);
       setActiveTool("inspect");
+      setDevToolsOpen(false);
       return;
     }
 
@@ -165,7 +209,7 @@ const AppInner: React.FC = () => {
       {/* ── Top Bar: Logo + Tabs + Window Controls ───────────────── */}
       <header className="app__titlebar glass-panel" role="banner">
         <div className="app__titlebar-logo" aria-label="KAGE" onClick={() => navigate("")}>
-          <span className="app__titlebar-kage">K A G E</span>
+          <img src="/kage-logo.png" alt="KAGE" className="app__titlebar-logo-img" />
         </div>
         <TabStrip
           tabs={tabs.map((t) => ({
@@ -223,14 +267,15 @@ const AppInner: React.FC = () => {
         {/* KAGE AI Panel (Docked beside IconSidebar) */}
         <AISidebar
           isOpen={aiOpen}
-          onClose={() => {
-            setAiOpen(false);
-            if (activeTool === "ai") setActiveTool("home");
-          }}
+          onClose={() => setAiOpen(false)}
         />
 
         {/* Main Viewport Stage */}
-        <main className="app__content" role="main" aria-label="Browser viewport">
+        <main
+          className={`app__content ${aiOpen ? "app__content--ai-open" : ""}`}
+          role="main"
+          aria-label="Browser viewport"
+        >
           <div className="app__viewport-stage" ref={viewportStageRef}>
             {activeTool === "settings" ? (
               <SettingsPage />
