@@ -12,7 +12,7 @@
 //!   Driven exclusively by the real CEF `OnRenderViewReady` callback (or equivalent browser-readiness
 //!   signal). KAGE must never self-transition to `Healthy` on a timer or assumption.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -269,14 +269,26 @@ impl NavigationState {
     }
 }
 
-/// CEF process termination status mapped from cef-rs 152 TerminationStatus.
+/// CEF process termination status mapped from the real cef-rs 152 `TerminationStatus` enum.
+///
+/// Variants mirror the cef-rs 152 `cef::TerminationStatus` discriminants exactly:
+///   `ProcessCrashed`, `ProcessOom`, `ProcessWasKilled`, `AbnormalTermination`,
+///   `LaunchFailed`, `IntegrityFailure`.
+/// An `Unknown(u32)` catch-all preserves any future CEF additions without silent reinterpretation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CefTerminationStatus {
     AbnormalTermination,
     ProcessWasKilled,
     ProcessCrashed,
     ProcessOom,
-    Unknown(i32),
+    /// Renderer process failed to start. Real CEF 152 discriminant.
+    LaunchFailed,
+    /// Renderer terminated by OS integrity/security enforcement. Real CEF 152 discriminant.
+    IntegrityFailure,
+    /// Unknown raw discriminant not present in the CEF 152 binding.
+    /// Carries the raw value for forensic logging; must NOT be reinterpreted as any
+    /// named security event.
+    Unknown(u32),
 }
 
 /// Disaggregated renderer termination status.
@@ -285,12 +297,13 @@ pub enum CefTerminationStatus {
 /// - `Oom`:              Renderer killed by OS due to memory exhaustion.
 /// - `Killed`:           Renderer forcibly killed by the host or OS.
 /// - `Abnormal`:         Abnormal exit not falling into the above categories.
-/// - `LaunchFailed`:     Renderer process failed to start (CEF `Unknown` catch-all).
-/// - `IntegrityFailure`: Process was terminated by the OS integrity monitor
-///                       (e.g. Windows Code Integrity / Gatekeeper). Mapped from
-///                       a specific `Unknown(discriminant)` that KAGE observes in
-///                       practice; the raw `raw_cef_status` field carries the exact
-///                       `Unknown(i32)` value for forensic logging.
+/// - `LaunchFailed`:     Renderer process failed to start (CEF `LaunchFailed`).
+/// - `IntegrityFailure`: Renderer terminated by OS integrity/security enforcement
+///                       (CEF `IntegrityFailure`). `raw_cef_status` carries the
+///                       original discriminant for forensic logging.
+/// - `Unknown(u32)`:     Future or unrecognised raw CEF discriminant. MUST NOT be
+///                       reinterpreted as a different named security event; telemetry
+///                       must surface the raw value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RendererTerminationStatus {
     Crashed,
@@ -301,19 +314,23 @@ pub enum RendererTerminationStatus {
     /// Renderer terminated by OS integrity/security enforcement.
     /// Check `RendererCrashDiagnostics::raw_cef_status` for the exact discriminant.
     IntegrityFailure,
+    /// Unrecognised raw discriminant from a future CEF version.
+    /// Carries the raw value; never silently mapped to another security classification.
+    Unknown(u32),
 }
 
 impl From<CefTerminationStatus> for RendererTerminationStatus {
     fn from(status: CefTerminationStatus) -> Self {
         match status {
-            CefTerminationStatus::ProcessCrashed => RendererTerminationStatus::Crashed,
-            CefTerminationStatus::ProcessOom => RendererTerminationStatus::Oom,
-            CefTerminationStatus::ProcessWasKilled => RendererTerminationStatus::Killed,
-            CefTerminationStatus::AbnormalTermination => RendererTerminationStatus::Abnormal,
-            // CEF 152 uses Unknown for both launch failure and OS-enforced termination.
-            // Callers that can distinguish the cause (e.g. by inspecting process exit codes
-            // out-of-band) should construct RendererTerminationStatus::IntegrityFailure directly.
-            CefTerminationStatus::Unknown(_) => RendererTerminationStatus::LaunchFailed,
+            CefTerminationStatus::ProcessCrashed       => RendererTerminationStatus::Crashed,
+            CefTerminationStatus::ProcessOom           => RendererTerminationStatus::Oom,
+            CefTerminationStatus::ProcessWasKilled     => RendererTerminationStatus::Killed,
+            CefTerminationStatus::AbnormalTermination  => RendererTerminationStatus::Abnormal,
+            CefTerminationStatus::LaunchFailed         => RendererTerminationStatus::LaunchFailed,
+            CefTerminationStatus::IntegrityFailure     => RendererTerminationStatus::IntegrityFailure,
+            // Preserve the raw discriminant. Do NOT silently rename unknown OS/process
+            // termination events to a different security classification.
+            CefTerminationStatus::Unknown(raw)         => RendererTerminationStatus::Unknown(raw),
         }
     }
 }
@@ -355,11 +372,13 @@ impl std::fmt::Display for BrowserSurfaceId {
 ///
 /// ## State Transitions
 /// - `Healthy`  → `Unresponsive` : CEF hung-renderer detection fires.
-/// - `Healthy`  → `RendererTerminated` : CEF `OnRenderProcessTerminated` fires.
-/// - `RendererTerminated` → `Recovering` : Host decides to relaunch the renderer.
-/// - `Recovering` → `Healthy` : **CEF `OnRenderViewReady` callback fires** (or equivalent
-///   browser-readiness signal). KAGE MUST NOT self-transition to `Healthy` on a timer or
-///   assumption; only the real CEF callback is authoritative.
+/// - `Healthy`  → `RendererTerminated` : CEF `OnRenderProcessTerminated` fires;
+///   `renderer_epoch` on the `Tab` is incremented at this point.
+/// - `RendererTerminated` → `Recovering` : Host explicitly initiates recovery.
+/// - `Recovering` → `Healthy` : CEF `OnRenderViewReady` fires **and** the callback's
+///   `renderer_epoch` matches `Tab::renderer_epoch`. A stale readiness event from a
+///   previous crash-recovery cycle (epoch mismatch) MUST be discarded.
+///   KAGE MUST NOT self-transition to `Healthy` on a timer or assumption.
 /// - `Unresponsive` → `Healthy` : CEF reports renderer is responsive again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TabHealth {
@@ -369,7 +388,11 @@ pub enum TabHealth {
         status: RendererTerminationStatus,
         diagnostics: RendererCrashDiagnostics,
     },
-    Recovering,
+    Recovering {
+        /// Epoch value at which this recovery was initiated.
+        /// Used to discard stale `OnRenderViewReady` events from prior crash cycles.
+        recovery_epoch: u64,
+    },
 }
 
 impl TabHealth {
@@ -379,6 +402,10 @@ impl TabHealth {
 
     pub fn is_crashed(&self) -> bool {
         matches!(self, TabHealth::RendererTerminated { .. })
+    }
+
+    pub fn is_recovering(&self) -> bool {
+        matches!(self, TabHealth::Recovering { .. })
     }
 }
 
@@ -429,6 +456,14 @@ pub struct Tab {
     pub can_go_back: Arc<AtomicBool>,
     pub can_go_forward: Arc<AtomicBool>,
     pub active_navigation_record: Arc<RwLock<Option<NavigationRecord>>>,
+    /// Monotonically increasing renderer recovery epoch.
+    ///
+    /// Incremented each time the renderer terminates and a new recovery is initiated.
+    /// `OnRenderViewReady` callbacks must compare their captured epoch against this
+    /// value before transitioning `TabHealth` to `Healthy`. A stale readiness event
+    /// (epoch < current) must be silently discarded to prevent incorrect revival of
+    /// a tab that has already entered a new crash-recovery cycle.
+    pub renderer_epoch: Arc<AtomicU64>,
 }
 
 impl Tab {
@@ -450,6 +485,7 @@ impl Tab {
             can_go_back: Arc::new(AtomicBool::new(false)),
             can_go_forward: Arc::new(AtomicBool::new(false)),
             active_navigation_record: Arc::new(RwLock::new(None)),
+            renderer_epoch: Arc::new(AtomicU64::new(0)),
         }
     }
 
