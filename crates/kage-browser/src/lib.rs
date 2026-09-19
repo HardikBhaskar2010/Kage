@@ -25,8 +25,8 @@ pub use manager::TabManager;
 pub use navigation::{BrowserOperationId, NavigationController, PendingOperation};
 pub use profile::{Profile, ProfileKind, ProfileManager};
 pub use tab::{
-    BrowserIdentity, CdpBinding, CdpSession, CefTerminationStatus, NavigationCancelCause,
-    NavigationId, NavigationRecord, NavigationSource, NavigationState, ProfileId,
-    RendererCrashDiagnostics, RendererTerminationStatus, Tab, TabHealth, TabId, TabLifecycle,
-    TabSummary,
+    BrowserIdentity, BrowserSurfaceId, CdpBinding, CdpSession, CefTerminationStatus,
+    NavigationCancelCause, NavigationId, NavigationRecord, NavigationSource, NavigationState,
+    ProfileId, RendererCrashDiagnostics, RendererTerminationStatus, Tab, TabHealth, TabId,
+    TabLifecycle, TabSummary,
 };

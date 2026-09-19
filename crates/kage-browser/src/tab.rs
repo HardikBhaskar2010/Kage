@@ -8,6 +8,9 @@
 //!   - CDP session: `SessionId` (ephemeral multiplexed client session attachment, not identity).
 //!   - BrowserSurface binding: `(TabId, BrowserSurfaceId)` (HWND/DPI/bounds decoupled from tab).
 //!   - Never manufacture synthetic TargetIds before real CDP discovery.
+//! - `Recovering` → `Healthy` transition:
+//!   Driven exclusively by the real CEF `OnRenderViewReady` callback (or equivalent browser-readiness
+//!   signal). KAGE must never self-transition to `Healthy` on a timer or assumption.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -277,6 +280,17 @@ pub enum CefTerminationStatus {
 }
 
 /// Disaggregated renderer termination status.
+///
+/// - `Crashed`:          Process crashed (e.g. segfault, unhandled exception).
+/// - `Oom`:              Renderer killed by OS due to memory exhaustion.
+/// - `Killed`:           Renderer forcibly killed by the host or OS.
+/// - `Abnormal`:         Abnormal exit not falling into the above categories.
+/// - `LaunchFailed`:     Renderer process failed to start (CEF `Unknown` catch-all).
+/// - `IntegrityFailure`: Process was terminated by the OS integrity monitor
+///                       (e.g. Windows Code Integrity / Gatekeeper). Mapped from
+///                       a specific `Unknown(discriminant)` that KAGE observes in
+///                       practice; the raw `raw_cef_status` field carries the exact
+///                       `Unknown(i32)` value for forensic logging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RendererTerminationStatus {
     Crashed,
@@ -284,6 +298,9 @@ pub enum RendererTerminationStatus {
     Killed,
     Abnormal,
     LaunchFailed,
+    /// Renderer terminated by OS integrity/security enforcement.
+    /// Check `RendererCrashDiagnostics::raw_cef_status` for the exact discriminant.
+    IntegrityFailure,
 }
 
 impl From<CefTerminationStatus> for RendererTerminationStatus {
@@ -293,6 +310,9 @@ impl From<CefTerminationStatus> for RendererTerminationStatus {
             CefTerminationStatus::ProcessOom => RendererTerminationStatus::Oom,
             CefTerminationStatus::ProcessWasKilled => RendererTerminationStatus::Killed,
             CefTerminationStatus::AbnormalTermination => RendererTerminationStatus::Abnormal,
+            // CEF 152 uses Unknown for both launch failure and OS-enforced termination.
+            // Callers that can distinguish the cause (e.g. by inspecting process exit codes
+            // out-of-band) should construct RendererTerminationStatus::IntegrityFailure directly.
             CefTerminationStatus::Unknown(_) => RendererTerminationStatus::LaunchFailed,
         }
     }
@@ -306,7 +326,41 @@ pub struct RendererCrashDiagnostics {
     pub observed_at_ms: u64,
 }
 
+/// Opaque surface identity binding a CEF windowed surface (HWND / Cocoa NSView child) to a tab.
+///
+/// Deliberately a UUID-backed newtype, not a raw `usize`, to prevent accidental aliasing
+/// with array indices or other opaque handles. HWND/DPI/bounds are stored separately.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BrowserSurfaceId(pub Uuid);
+
+impl BrowserSurfaceId {
+    pub fn new() -> Self {
+        BrowserSurfaceId(Uuid::new_v4())
+    }
+}
+
+impl Default for BrowserSurfaceId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for BrowserSurfaceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "surface:{}", self.0.simple())
+    }
+}
+
 /// Process and responsiveness health status of the tab.
+///
+/// ## State Transitions
+/// - `Healthy`  → `Unresponsive` : CEF hung-renderer detection fires.
+/// - `Healthy`  → `RendererTerminated` : CEF `OnRenderProcessTerminated` fires.
+/// - `RendererTerminated` → `Recovering` : Host decides to relaunch the renderer.
+/// - `Recovering` → `Healthy` : **CEF `OnRenderViewReady` callback fires** (or equivalent
+///   browser-readiness signal). KAGE MUST NOT self-transition to `Healthy` on a timer or
+///   assumption; only the real CEF callback is authoritative.
+/// - `Unresponsive` → `Healthy` : CEF reports renderer is responsive again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TabHealth {
     Healthy,
@@ -333,7 +387,8 @@ impl TabHealth {
 pub struct TabSummary {
     pub identity: BrowserIdentity,
     pub cdp: Option<CdpBinding>,
-    pub surface_id: Option<usize>,
+    /// Opaque surface binding decoupled from CEF identity (HWND/DPI stored separately).
+    pub surface_id: Option<BrowserSurfaceId>,
     pub lifecycle: TabLifecycle,
     pub navigation: NavigationState,
     pub health: TabHealth,
@@ -363,7 +418,9 @@ pub struct Tab {
     pub profile_id: ProfileId,
     pub identity: Arc<RwLock<BrowserIdentity>>,
     pub cdp: Arc<RwLock<Option<CdpBinding>>>,
-    pub surface_id: Arc<RwLock<Option<usize>>>,
+    /// Opaque surface binding decoupled from CEF identity. Assigned when a native
+    /// windowed child surface (HWND / Cocoa NSView) is created; `None` until then.
+    pub surface_id: Arc<RwLock<Option<BrowserSurfaceId>>>,
     pub lifecycle: Arc<RwLock<TabLifecycle>>,
     pub navigation: Arc<RwLock<NavigationState>>,
     pub health: Arc<RwLock<TabHealth>>,
