@@ -9,13 +9,16 @@ description = "Tauri 2.x native host process — CEF lifecycle, Win32 window, ty
 
 [lib]
 name = "kage_host_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["staticlib", "rlib"]
+test = false
 
 [dependencies]
 kage-core    = { path = "../crates/kage-core" }
 kage-storage = { path = "../crates/kage-storage" }
 kage-context = { path = "../crates/kage-context" }
 kage-cdp     = { path = "../crates/kage-cdp" }
+kage-engine  = { path = "../crates/kage-engine" }
+kage-browser = { path = "../crates/kage-browser" }
 
 tauri        = { version = "2", features = ["devtools"] }
 tokio        = { version = "1", features = ["full"] }

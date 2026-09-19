@@ -6,6 +6,10 @@ members = [
     "crates/kage-storage",
     "crates/kage-context",
     "crates/kage-plugin",
+    "crates/kage-integration-tests",
+    "crates/kage-cef-subprocess",
+    "crates/kage-engine",
+    "crates/kage-browser",
     "src-tauri",
 ]
 
@@ -15,3 +19,8 @@ edition = "2021"
 authors = ["Hardik Bhaskar <hardik.bhaskar2010@gmail.com>"]
 license = "Proprietary"
 repository = "https://github.com/HardikBhaskar2010/Kage"
+
+[workspace.dependencies]
+cef = "=152.3.0"
+cef-dll-sys = "=152.3.0"
+

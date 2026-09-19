@@ -16,6 +16,7 @@ use tauri::State;
 use kage_core::{ToolBus, ToolRequest};
 use kage_core::bus::PartialPolicyContext;
 use kage_cdp::CdpBroker;
+use kage_engine::{CefRuntime, NativeSurfaceManager};
 use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
@@ -65,12 +66,12 @@ pub async fn tool_dispatch(
         request_id: payload.request_id,
         reason: payload.reason,
     };
-    let ctx = PartialPolicyContext {
-        caller_id: "ai_subsystem".into(),
-        session_id: payload.session_id,
-        workspace_id: payload.workspace_id,
-        session_granted: payload.session_granted,
-    };
+    let ctx = PartialPolicyContext::new(
+        "ai_subsystem",
+        payload.session_id,
+        payload.workspace_id,
+        payload.session_granted,
+    );
 
     bus.dispatch(request, ctx, CancellationToken::new())
         .await
@@ -119,19 +120,41 @@ pub struct TabInfo {
     pub is_secure: bool,
 }
 
+use kage_browser::{ProfileId, TabId, TabManager, TabSummary};
+use uuid::Uuid;
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTabPayload {
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub profile_id: Option<String>,
+}
+
 #[tauri::command]
-pub async fn create_tab(url: Option<String>, title: Option<String>) -> Result<TabInfo, String> {
-    let target_url = url.unwrap_or_default();
-    let display_title = title.unwrap_or_else(|| {
-        if target_url.is_empty() {
-            "New Tab".into()
-        } else {
-            target_url.clone()
-        }
+pub async fn create_tab(
+    payload: Option<CreateTabPayload>,
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<TabInfo, String> {
+    let payload = payload.unwrap_or(CreateTabPayload {
+        url: None,
+        title: None,
+        profile_id: None,
     });
 
+    let target_url = payload.url.unwrap_or_else(|| "https://example.com".to_string());
+    let display_title = payload.title.unwrap_or_else(|| "New Tab".into());
+    let profile_id = payload
+        .profile_id
+        .map(ProfileId::new)
+        .unwrap_or_else(ProfileId::personal);
+
+    let tab_id = tab_manager
+        .create_tab(profile_id, &target_url)
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(TabInfo {
-        id: format!("tab_{}", uuid::Uuid::new_v4().simple()),
+        id: tab_id.to_string(),
         url: target_url.clone(),
         title: display_title,
         favicon: Some(if target_url.is_empty() { "kage".into() } else { "globe".into() }),
@@ -143,39 +166,119 @@ pub async fn create_tab(url: Option<String>, title: Option<String>) -> Result<Ta
 }
 
 #[tauri::command]
-pub async fn close_tab(tab_id: String) -> Result<(), String> {
-    tracing::info!("IPC: close_tab {tab_id}");
-    Ok(())
+pub async fn close_tab(
+    tab_id: String,
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&tab_id).map_err(|e| e.to_string())?;
+    tab_manager
+        .close_tab(TabId(uuid))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn switch_tab(tab_id: String) -> Result<(), String> {
-    tracing::info!("IPC: switch_tab {tab_id}");
-    Ok(())
+pub async fn switch_tab(
+    tab_id: String,
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&tab_id).map_err(|e| e.to_string())?;
+    tab_manager
+        .switch_tab(TabId(uuid))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn navigate_to(tab_id: String, url: String) -> Result<(), String> {
-    tracing::info!("IPC: navigate_to {tab_id} -> {url}");
-    Ok(())
+pub async fn navigate_to(
+    tab_id: String,
+    url: String,
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&tab_id).map_err(|e| e.to_string())?;
+    let tab = tab_manager
+        .get_tab(TabId(uuid))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tab_manager
+        .navigation()
+        .navigate(&tab, &url, kage_browser::NavigationSource::Programmatic)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn go_back(tab_id: String) -> Result<(), String> {
-    tracing::info!("IPC: go_back {tab_id}");
-    Ok(())
+pub async fn go_back(
+    tab_id: String,
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&tab_id).map_err(|e| e.to_string())?;
+    let tab = tab_manager
+        .get_tab(TabId(uuid))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tab_manager
+        .navigation()
+        .go_back(&tab)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn go_forward(tab_id: String) -> Result<(), String> {
-    tracing::info!("IPC: go_forward {tab_id}");
-    Ok(())
+pub async fn go_forward(
+    tab_id: String,
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&tab_id).map_err(|e| e.to_string())?;
+    let tab = tab_manager
+        .get_tab(TabId(uuid))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tab_manager
+        .navigation()
+        .go_forward(&tab)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn reload_tab(tab_id: String) -> Result<(), String> {
-    tracing::info!("IPC: reload_tab {tab_id}");
-    Ok(())
+pub async fn reload_tab(
+    tab_id: String,
+    ignore_cache: Option<bool>,
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&tab_id).map_err(|e| e.to_string())?;
+    let tab = tab_manager
+        .get_tab(TabId(uuid))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tab_manager
+        .navigation()
+        .reload(&tab, ignore_cache.unwrap_or(false))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_tabs(
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<Vec<TabSummary>, String> {
+    Ok(tab_manager.list_tabs().await)
+}
+
+#[tauri::command]
+pub async fn get_active_tab(
+    tab_manager: State<'_, Arc<TabManager>>,
+) -> Result<Option<String>, String> {
+    Ok(tab_manager.get_active_tab().await.map(|id| id.to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -185,45 +288,15 @@ pub async fn reload_tab(tab_id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn inspect_at_location(x: i32, y: i32) -> Result<serde_json::Value, String> {
     tracing::info!("IPC: inspect_at_location ({x}, {y}) via DOM.getNodeForLocation");
-    // Canonical Pipeline: pointer coordinates -> DOM.getNodeForLocation -> backendNodeId -> DOM.getBoxModel -> CSS.getComputedStyleForNode
-    let backend_node_id = 42;
-    let selector = format!("div.kage-surface#node-{backend_node_id}");
-    Ok(serde_json::json!({
-        "backendNodeId": backend_node_id,
-        "selector": selector,
-        "tag": "DIV",
-        "classes": ["kage-surface", "liquid-glass-surface"],
-        "attributes": { "role": "region", "data-backend-node-id": backend_node_id.to_string() },
-        "boxModel": {
-            "margin": [0, 0, 0, 0],
-            "border": [1, 1, 1, 1],
-            "padding": [12, 16, 12, 16],
-            "dimensions": { "width": 800, "height": 400 }
-        },
-        "computedStyles": {
-            "display": "block",
-            "position": "relative",
-            "background": "rgba(43, 14, 22, 0.75)",
-            "backdrop-filter": "blur(20px)"
-        }
-    }))
+    // Fail-closed until Phase 4 CDP Target binding is active
+    Err("Inspection unavailable: CDP target session not yet bound (Phase 4)".to_string())
 }
 
 #[tauri::command]
 pub async fn inspect_node(selector: String) -> Result<serde_json::Value, String> {
     tracing::info!("IPC: inspect_node {selector} (fallback by selector)");
-    Ok(serde_json::json!({
-        "selector": selector,
-        "tag": "DIV",
-        "classes": ["liquid-glass-surface"],
-        "attributes": { "role": "region" },
-        "boxModel": {
-            "margin": [0, 0, 0, 0],
-            "border": [1, 1, 1, 1],
-            "padding": [12, 16, 12, 16],
-            "dimensions": { "width": 800, "height": 400 }
-        }
-    }))
+    // Fail-closed until Phase 4 CDP Target binding is active
+    Err("Inspection unavailable: CDP target session not yet bound (Phase 4)".to_string())
 }
 
 #[tauri::command]
@@ -233,13 +306,24 @@ pub async fn eval_js(command: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn get_audit_logs() -> Result<Vec<serde_json::Value>, String> {
-    Ok(vec![])
+pub async fn get_audit_logs(
+    audit_db: State<'_, Arc<kage_storage::AuditDb>>,
+) -> Result<Vec<kage_core::audit::CanonicalAuditEntry>, String> {
+    use kage_core::audit::AuditReader;
+    AuditReader::get_recent_records(&**audit_db, 100)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn verify_audit_chain() -> Result<bool, String> {
-    Ok(true)
+pub async fn verify_audit_chain(
+    audit_db: State<'_, Arc<kage_storage::AuditDb>>,
+) -> Result<bool, String> {
+    use kage_core::audit::AuditVerifier;
+    AuditVerifier::verify_chain(&**audit_db)
+        .await
+        .map(|_| true)
+        .map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -256,9 +340,51 @@ pub struct ViewportBounds {
 }
 
 #[tauri::command]
-pub async fn sync_viewport_bounds(bounds: ViewportBounds) -> Result<(), String> {
+pub async fn sync_viewport_bounds(
+    bounds: ViewportBounds,
+    surface_manager: State<'_, Arc<NativeSurfaceManager>>,
+) -> Result<(), String> {
     tracing::debug!("IPC: sync_viewport_bounds: {:?}", bounds);
-    // On Windows Win32 / macOS, coordinates are translated from logical to
-    // physical device pixels and applied to child CEF container window.
+
+    // Compute the physical dual-surface layout (WebView2 chrome + CEF content)
+    // from the logical CSS pixel bounds reported by the React shell.
+    //
+    // NOTE: On Windows, `bounds.width` and `bounds.height` are the full
+    // Tauri window client area in *physical* pixels (already scaled by
+    // `bounds.scale_factor`).  `NativeSurfaceManager::update_layout` expects
+    // physical pixel dimensions and a DPI scale factor.
+    let layout = surface_manager
+        .update_layout(bounds.width, bounds.height, bounds.scale_factor)
+        .map_err(|e| e.to_string())?;
+
+    tracing::info!(
+        "sync_viewport_bounds: WebView2 top_chrome={:?}, CEF content={:?}",
+        layout.top_chrome_rect,
+        layout.cef_content_rect,
+    );
+
+    // TODO(Phase 2 Step 3): Apply layout.cef_content_rect to the CEF child HWND
+    // via NativeSurfaceManager::set_hwnd_bounds once we have the real HWND handle.
+    // TODO(Phase 2 Step 3): Apply layout.top_chrome_rect to the WebView2 child bounds.
+
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// CEF Engine State (Phase 2)
+// ---------------------------------------------------------------------------
+
+/// IPC command: `kage:cef:engine_state`
+///
+/// Returns the current lifecycle state of the CEF engine. The React UI uses
+/// this to gate navigation controls and loading indicators.
+#[tauri::command]
+pub async fn get_engine_state(
+    cef_runtime: State<'_, Arc<CefRuntime>>,
+) -> Result<String, String> {
+    let state = cef_runtime.state();
+    Ok(format!("{:?}", state))
+}
+
+
+

@@ -1,0 +1,22 @@
+[package]
+name = "kage-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "KAGE native Chromium/CEF engine foundation — runtime, surfaces, executors, coordinates"
+
+[dependencies]
+cef = { workspace = true }
+thiserror = "2.0"
+tracing = "0.1"
+tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
+serde = { version = "1.0", features = ["derive"] }
+

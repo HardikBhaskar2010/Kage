@@ -1,0 +1,15 @@
+[package]
+name = "kage-cef-subprocess"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Minimal helper binary for CEF renderer, GPU, and utility subprocesses"
+
+[[bin]]
+name = "kage-cef-subprocess"
+path = "src/main.rs"
+
+[dependencies]
+cef = { workspace = true }

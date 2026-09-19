@@ -286,6 +286,8 @@ CEF operates with strict thread-affinity rules. Violating these rules results in
 1. **Never block `TID_UI`:** Heavy calculations, AI completions, or disk I/O must never run on CEF's UI thread.
 2. **Cross-Thread Dispatch:** When a Rust background thread needs to command CEF, it must dispatch via `CefPostTask(TID_UI, task)`.
 3. **Re-Entrancy Avoidance:** Never synchronously wait on a Rust `tokio::oneshot` receiver while inside a CEF callback.
+4. **Live HWND Message Pump Owner (ARCH-CEF-THREAD-001):** Every native Win32 `HWND` participating in the CEF hierarchy must have an active message pump on its owning thread (`GetMessage` / `PeekMessage` / `DispatchMessage`). Win32 delivers child creation and destruction notifications (`WM_PARENTNOTIFY`, `WM_NCCREATE`) to the owning thread; without message dispatching, browser creation stalls and `cef::shutdown()` deadlocks.
+5. **Execution vs Completion Semantics:** `CefUiExecutor::execute` confirms only that an operation was accepted/dispatched on `TID_UI`. Async CEF operations (such as `CreateBrowser`) complete only when their corresponding event callback (e.g. `OnAfterCreated`) fires and is processed by `BrowserEventBus`.
 
 ---
 
