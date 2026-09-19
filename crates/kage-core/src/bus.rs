@@ -29,7 +29,8 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use crate::policy::{PolicyContext, PolicyDecision, PolicyEngine};
+use crate::audit::{digest_json, ActorType, AuditSink, AuditStatus, CanonicalAuditRecord};
+use crate::policy::{AuditFailurePolicy, PolicyContext, PolicyDecision, PolicyEngine};
 use crate::sanitizer::SecretSanitizer;
 use crate::tool::{KageTool, ToolError, ToolRequest, ToolResponse};
 
@@ -42,6 +43,8 @@ pub struct ToolBus {
     registry: RwLock<HashMap<String, Arc<dyn KageTool>>>,
     policy: PolicyEngine,
     sanitizer: SecretSanitizer,
+    audit_sink: Option<Arc<dyn AuditSink>>,
+    host_instance_id: String,
 }
 
 impl ToolBus {
@@ -51,7 +54,26 @@ impl ToolBus {
             registry: RwLock::new(HashMap::new()),
             policy: PolicyEngine::new(),
             sanitizer: SecretSanitizer::new(),
+            audit_sink: None,
+            host_instance_id: format!("inst_{}", uuid::Uuid::new_v4().simple()),
         }
+    }
+
+    /// Set an explicit host instance ID (e.g. from desktop host process).
+    pub fn with_host_instance_id(mut self, id: impl Into<String>) -> Self {
+        self.host_instance_id = id.into();
+        self
+    }
+
+    /// Set an [`AuditSink`] on builder pattern.
+    pub fn with_audit_sink(mut self, sink: Arc<dyn AuditSink>) -> Self {
+        self.audit_sink = Some(sink);
+        self
+    }
+
+    /// Set an [`AuditSink`] dynamically.
+    pub fn set_audit_sink(&mut self, sink: Arc<dyn AuditSink>) {
+        self.audit_sink = Some(sink);
     }
 
     /// Register a [`KageTool`] implementation.
@@ -70,13 +92,12 @@ impl ToolBus {
 
     /// Dispatch a [`ToolRequest`] through the full governance pipeline.
     ///
-    /// # Arguments
-    ///
-    /// * `request` — the tool call parameters from the AI subsystem.
-    /// * `ctx_partial` — policy context fields supplied by the caller (caller_id,
-    ///   session_id, workspace_id, session_granted).  The bus fills in `tool_id`
-    ///   and `required_tier` from the tool registry.
-    /// * `cancel` — cancellation token; firing it causes in-flight execution to abort.
+    /// # Invariants Enforced
+    /// - INV-02: All browser actions pass through ToolBus.
+    /// - INV-04: Privileged mutations require policy approval.
+    /// - INV-05: Privileged mutations require successful audit commitment (Fail-Closed).
+    /// - INV-06: Secrets sanitized before returning to caller.
+    /// - INV-09: STOP cancellation token immediately halts execution.
     pub async fn dispatch(
         &self,
         request: ToolRequest,
@@ -84,6 +105,13 @@ impl ToolBus {
         cancel: CancellationToken,
     ) -> Result<ToolResponse, ToolError> {
         let start = Instant::now();
+
+        // Check cancellation immediately (INV-09)
+        if cancel.is_cancelled() {
+            return Err(ToolError::Cancelled {
+                request_id: request.request_id.clone(),
+            });
+        }
 
         // 1. Lookup tool.
         let tool = {
@@ -95,8 +123,6 @@ impl ToolBus {
         };
 
         // 2. Schema validation (lightweight structural check via JSON value shape).
-        //    Full JSON Schema validation would add `jsonschema` crate; this stub
-        //    ensures the args are at minimum a JSON object.
         if !request.args.is_object() && !request.args.is_null() {
             return Err(ToolError::SchemaViolation {
                 tool_id: request.tool_id.clone(),
@@ -104,11 +130,11 @@ impl ToolBus {
             });
         }
 
-        // 3. Policy adjudication.
+        // 3. Policy adjudication (INV-04).
         let policy_ctx = PolicyContext {
-            caller_id: ctx_partial.caller_id,
-            session_id: ctx_partial.session_id,
-            workspace_id: ctx_partial.workspace_id,
+            caller_id: ctx_partial.caller_id.clone(),
+            session_id: ctx_partial.session_id.clone(),
+            workspace_id: ctx_partial.workspace_id.clone(),
             tool_id: request.tool_id.clone(),
             required_tier: tool.tier(),
             session_granted: ctx_partial.session_granted,
@@ -116,6 +142,34 @@ impl ToolBus {
         match self.policy.adjudicate(&policy_ctx) {
             PolicyDecision::Allow => { /* proceed */ }
             PolicyDecision::RequireConfirmation { reason } => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                if let Some(ref sink) = self.audit_sink {
+                    let _ = sink.append(CanonicalAuditRecord {
+                        sequence: None,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        request_id: request.request_id.clone(),
+                        parent_request_id: None,
+                        caller: ctx_partial.caller_id.clone(),
+                        actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
+                        tool_id: request.tool_id.clone(),
+                        capability: format!("{:?}", tool.tier()),
+                        profile_id: ctx_partial.profile_id.clone(),
+                        tab_id: ctx_partial.tab_id.clone(),
+                        target_id: ctx_partial.target_id.clone(),
+                        session_id: Some(ctx_partial.session_id.clone()),
+                        origin: ctx_partial.origin.clone(),
+                        tier: tool.tier() as u8,
+                        policy_decision: format!("require_confirmation: {reason}"),
+                        confirmation_id: None,
+                        args_digest: digest_json(&request.args),
+                        result_digest: None,
+                        status: AuditStatus::Denied,
+                        duration_ms,
+                        error_code: Some("PERMISSION_CONFIRMATION_REQUIRED".into()),
+                        host_instance_id: Some(self.host_instance_id.clone()),
+                        prev_hash: None,
+                    }).await;
+                }
                 return Err(ToolError::PermissionDenied {
                     tool_id: request.tool_id.clone(),
                     required: policy_ctx.required_tier,
@@ -123,6 +177,34 @@ impl ToolBus {
                 });
             }
             PolicyDecision::Deny { reason } => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                if let Some(ref sink) = self.audit_sink {
+                    let _ = sink.append(CanonicalAuditRecord {
+                        sequence: None,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        request_id: request.request_id.clone(),
+                        parent_request_id: None,
+                        caller: ctx_partial.caller_id.clone(),
+                        actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
+                        tool_id: request.tool_id.clone(),
+                        capability: format!("{:?}", tool.tier()),
+                        profile_id: ctx_partial.profile_id.clone(),
+                        tab_id: ctx_partial.tab_id.clone(),
+                        target_id: ctx_partial.target_id.clone(),
+                        session_id: Some(ctx_partial.session_id.clone()),
+                        origin: ctx_partial.origin.clone(),
+                        tier: tool.tier() as u8,
+                        policy_decision: format!("denied: {reason}"),
+                        confirmation_id: None,
+                        args_digest: digest_json(&request.args),
+                        result_digest: None,
+                        status: AuditStatus::Denied,
+                        duration_ms,
+                        error_code: Some("PERMISSION_DENIED".into()),
+                        host_instance_id: Some(self.host_instance_id.clone()),
+                        prev_hash: None,
+                    }).await;
+                }
                 return Err(ToolError::PermissionDenied {
                     tool_id: request.tool_id.clone(),
                     required: policy_ctx.required_tier,
@@ -131,16 +213,147 @@ impl ToolBus {
             }
         }
 
-        // 4. Execute (respects cancellation token).
-        let mut response = tool.execute(&request, cancel).await?;
+        // 4. Pre-Execution Audit Commitment for Privileged Mutations (INV-05 Two-Stage Lifecycle)
+        // If the action is mutating or privileged, an AuditStatus::Started intent record
+        // MUST commit to the audit ledger BEFORE tool execution.
+        // If this commit fails: FAIL CLOSED immediately. The tool is NEVER invoked.
+        let is_privileged_mutation = tool.tier().audit_failure_policy() == AuditFailurePolicy::FailClosed;
+        if is_privileged_mutation {
+            if let Some(ref sink) = self.audit_sink {
+                let intent_record = CanonicalAuditRecord {
+                    sequence: None,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    request_id: request.request_id.clone(),
+                    parent_request_id: None,
+                    caller: ctx_partial.caller_id.clone(),
+                    actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
+                    tool_id: request.tool_id.clone(),
+                    capability: format!("{:?}", tool.tier()),
+                    profile_id: ctx_partial.profile_id.clone(),
+                    tab_id: ctx_partial.tab_id.clone(),
+                    target_id: ctx_partial.target_id.clone(),
+                    session_id: Some(ctx_partial.session_id.clone()),
+                    origin: ctx_partial.origin.clone(),
+                    tier: tool.tier() as u8,
+                    policy_decision: "allow".into(),
+                    confirmation_id: if ctx_partial.session_granted {
+                        Some(format!("session:{}", ctx_partial.session_id))
+                    } else {
+                        None
+                    },
+                    args_digest: digest_json(&request.args),
+                    result_digest: None,
+                    status: AuditStatus::Started,
+                    duration_ms: 0,
+                    error_code: None,
+                    host_instance_id: Some(self.host_instance_id.clone()),
+                    prev_hash: None,
+                };
 
-        // 5. Sanitize output before returning to caller.
-        response.output = self.sanitizer.sanitize(response.output);
+                if let Err(audit_err) = sink.append(intent_record).await {
+                    return Err(ToolError::AuditFailure(format!(
+                        "Privileged mutation '{}' failed closed: pre-execution audit intent could not be committed ({audit_err}). Action aborted before execution.",
+                        request.tool_id
+                    )));
+                }
+            }
+        }
 
-        // 6. TODO: Audit::append(record) — wired in Chunk 7 when kage-storage is linked.
-        let _elapsed = start.elapsed();
+        // 5. Execute tool (respects cancellation token). Tool ONLY runs if intent committed.
+        let exec_result = tool.execute(&request, cancel).await;
+        let duration_ms = start.elapsed().as_millis() as u64;
 
-        Ok(response)
+        match exec_result {
+            Ok(mut response) => {
+                // 6. Sanitize output before returning to caller (INV-06).
+                response.output = self.sanitizer.sanitize(response.output);
+                response.elapsed_ms = duration_ms;
+
+                // 7. Record completion in audit ledger (INV-05).
+                if let Some(ref sink) = self.audit_sink {
+                    let record = CanonicalAuditRecord {
+                        sequence: None,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        request_id: request.request_id.clone(),
+                        parent_request_id: None,
+                        caller: ctx_partial.caller_id.clone(),
+                        actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
+                        tool_id: request.tool_id.clone(),
+                        capability: format!("{:?}", tool.tier()),
+                        profile_id: ctx_partial.profile_id.clone(),
+                        tab_id: ctx_partial.tab_id.clone(),
+                        target_id: ctx_partial.target_id.clone(),
+                        session_id: Some(ctx_partial.session_id.clone()),
+                        origin: ctx_partial.origin.clone(),
+                        tier: tool.tier() as u8,
+                        policy_decision: "allow".into(),
+                        confirmation_id: if ctx_partial.session_granted {
+                            Some(format!("session:{}", ctx_partial.session_id))
+                        } else {
+                            None
+                        },
+                        args_digest: digest_json(&request.args),
+                        result_digest: Some(digest_json(&response.output)),
+                        status: AuditStatus::Success,
+                        duration_ms,
+                        error_code: None,
+                        host_instance_id: Some(self.host_instance_id.clone()),
+                        prev_hash: None,
+                    };
+
+                    if let Err(audit_err) = sink.append(record).await {
+                        // Enforce Invariant 05: Fail-Closed on mutating actions
+                        match tool.tier().audit_failure_policy() {
+                            AuditFailurePolicy::FailClosed => {
+                                return Err(ToolError::AuditFailure(format!(
+                                    "Privileged action '{}' failed closed: audit completion commit failed ({audit_err})",
+                                    request.tool_id
+                                )));
+                            }
+                            AuditFailurePolicy::DegradeGraceful => {
+                                // Non-sensitive telemetry degrades gracefully
+                            }
+                        }
+                    }
+                }
+
+                Ok(response)
+            }
+            Err(err) => {
+                if let Some(ref sink) = self.audit_sink {
+                    let status = match err {
+                        ToolError::Cancelled { .. } => AuditStatus::Cancelled,
+                        _ => AuditStatus::Error,
+                    };
+                    let _ = sink.append(CanonicalAuditRecord {
+                        sequence: None,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        request_id: request.request_id.clone(),
+                        parent_request_id: None,
+                        caller: ctx_partial.caller_id.clone(),
+                        actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
+                        tool_id: request.tool_id.clone(),
+                        capability: format!("{:?}", tool.tier()),
+                        profile_id: ctx_partial.profile_id.clone(),
+                        tab_id: ctx_partial.tab_id.clone(),
+                        target_id: ctx_partial.target_id.clone(),
+                        session_id: Some(ctx_partial.session_id.clone()),
+                        origin: ctx_partial.origin.clone(),
+                        tier: tool.tier() as u8,
+                        policy_decision: "allow".into(),
+                        confirmation_id: None,
+                        args_digest: digest_json(&request.args),
+                        result_digest: None,
+                        status,
+                        duration_ms,
+                        error_code: Some(err.to_string()),
+                        host_instance_id: Some(self.host_instance_id.clone()),
+                        prev_hash: None,
+                    }).await;
+                }
+                Err(err)
+            }
+        }
     }
 }
 
@@ -157,6 +370,32 @@ pub struct PartialPolicyContext {
     pub session_id: String,
     pub workspace_id: String,
     pub session_granted: bool,
+    pub actor: Option<ActorType>,
+    pub profile_id: Option<String>,
+    pub tab_id: Option<String>,
+    pub target_id: Option<String>,
+    pub origin: Option<String>,
+}
+
+impl PartialPolicyContext {
+    pub fn new(
+        caller_id: impl Into<String>,
+        session_id: impl Into<String>,
+        workspace_id: impl Into<String>,
+        session_granted: bool,
+    ) -> Self {
+        Self {
+            caller_id: caller_id.into(),
+            session_id: session_id.into(),
+            workspace_id: workspace_id.into(),
+            session_granted,
+            actor: None,
+            profile_id: None,
+            tab_id: None,
+            target_id: None,
+            origin: None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +405,7 @@ pub struct PartialPolicyContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy::PermissionTier;
     use crate::tool::ToolError;
     use async_trait::async_trait;
     use serde_json::json;
@@ -196,13 +436,81 @@ mod tests {
         }
     }
 
-    fn partial_ctx() -> PartialPolicyContext {
-        PartialPolicyContext {
-            caller_id: "ai_subsystem".into(),
-            session_id: "sess-test".into(),
-            workspace_id: "ws-default".into(),
-            session_granted: false,
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::sync::Mutex;
+    use crate::audit::AuditError as CoreAuditError;
+
+    struct MutatingTool {
+        executed: Arc<AtomicBool>,
+    }
+
+    impl MutatingTool {
+        fn new(executed: Arc<AtomicBool>) -> Self {
+            Self { executed }
         }
+    }
+
+    #[async_trait]
+    impl KageTool for MutatingTool {
+        fn tool_id(&self) -> &'static str {
+            "test.mutate"
+        }
+        fn tier(&self) -> PermissionTier {
+            PermissionTier::StateMutating
+        }
+        fn schema(&self) -> serde_json::Value {
+            json!({ "type": "object" })
+        }
+        async fn execute(
+            &self,
+            request: &ToolRequest,
+            _cancel: CancellationToken,
+        ) -> Result<ToolResponse, ToolError> {
+            self.executed.store(true, Ordering::SeqCst);
+            Ok(ToolResponse {
+                request_id: request.request_id.clone(),
+                output: json!({ "status": "mutated" }),
+                elapsed_ms: 0,
+            })
+        }
+    }
+
+    struct MockAuditSink {
+        records: Mutex<Vec<CanonicalAuditRecord>>,
+        should_fail: AtomicBool,
+    }
+
+    impl MockAuditSink {
+        fn new() -> Self {
+            Self {
+                records: Mutex::new(Vec::new()),
+                should_fail: AtomicBool::new(false),
+            }
+        }
+
+        fn with_failure() -> Self {
+            Self {
+                records: Mutex::new(Vec::new()),
+                should_fail: AtomicBool::new(true),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl AuditSink for MockAuditSink {
+        async fn append(&self, record: CanonicalAuditRecord) -> Result<u64, CoreAuditError> {
+            if self.should_fail.load(Ordering::SeqCst) {
+                return Err(CoreAuditError::Storage("Simulated audit disk failure".into()));
+            }
+            let mut list = self.records.lock().await;
+            let seq = (list.len() + 1) as u64;
+            list.push(record);
+            Ok(seq)
+        }
+    }
+
+    fn partial_ctx() -> PartialPolicyContext {
+        PartialPolicyContext::new("ai_subsystem", "sess-test", "ws-default", false)
     }
 
     #[tokio::test]
@@ -218,6 +526,80 @@ mod tests {
         };
         let resp = bus.dispatch(req, partial_ctx(), CancellationToken::new()).await.unwrap();
         assert_eq!(resp.output["msg"], "hello");
+    }
+
+    #[tokio::test]
+    async fn dispatch_records_in_audit_sink() {
+        let sink = Arc::new(MockAuditSink::new());
+        let bus = ToolBus::new().with_audit_sink(sink.clone());
+        bus.register(EchoTool).await;
+
+        let req = ToolRequest {
+            tool_id: "test.echo".into(),
+            args: json!({ "msg": "hello" }),
+            request_id: "req-audit-001".into(),
+            reason: "audit test".into(),
+        };
+        let resp = bus.dispatch(req, partial_ctx(), CancellationToken::new()).await.unwrap();
+        assert_eq!(resp.output["msg"], "hello");
+
+        let entries = sink.records.lock().await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].tool_id, "test.echo");
+        assert_eq!(entries[0].status, AuditStatus::Success);
+    }
+
+    #[tokio::test]
+    async fn mutating_action_fails_closed_on_audit_error() {
+        // INVARIANT 05: Privileged mutations require successful audit commitment.
+        // Two-Stage Lifecycle: An AuditStatus::Started intent record MUST commit BEFORE execution.
+        let sink = Arc::new(MockAuditSink::with_failure());
+        let bus = ToolBus::new().with_audit_sink(sink);
+        let executed = Arc::new(AtomicBool::new(false));
+        bus.register(MutatingTool::new(executed.clone())).await;
+
+        let req = ToolRequest {
+            tool_id: "test.mutate".into(),
+            args: json!({ "action": "click" }),
+            request_id: "req-mutate-001".into(),
+            reason: "mutation test".into(),
+        };
+        // Session granted = true so policy passes
+        let mut ctx = partial_ctx();
+        ctx.session_granted = true;
+
+        let result = bus.dispatch(req, ctx, CancellationToken::new()).await;
+        assert!(
+            matches!(result, Err(ToolError::AuditFailure(_))),
+            "Mutating action MUST fail closed when audit write fails (INV-05)"
+        );
+        assert_eq!(
+            executed.load(Ordering::SeqCst),
+            false,
+            "CRITICAL SECURITY CONTRACT (INV-05): Mutating tool execute() MUST NEVER be called if audit intent fails!"
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_halts_dispatch_immediately() {
+        // INVARIANT 09: STOP prevents subsequent actions.
+        let bus = ToolBus::new();
+        bus.register(EchoTool).await;
+
+        let cancel = CancellationToken::new();
+        cancel.cancel(); // Pre-cancelled token
+
+        let req = ToolRequest {
+            tool_id: "test.echo".into(),
+            args: json!({}),
+            request_id: "req-cancel-001".into(),
+            reason: "cancellation test".into(),
+        };
+        let result = bus.dispatch(req, partial_ctx(), cancel).await;
+        assert!(
+            matches!(result, Err(ToolError::Cancelled { .. })),
+            "Pre-cancelled dispatch must immediately abort with ToolError::Cancelled"
+        );
     }
 
     #[tokio::test]
@@ -242,7 +624,7 @@ mod tests {
             tool_id: "test.echo".into(),
             args: json!({ "password": "supersecret", "url": "https://example.com" }),
             request_id: "req-003".into(),
-            reason: "unit test",
+            reason: "unit test".into(),
         };
         let resp = bus.dispatch(req, partial_ctx(), CancellationToken::new()).await.unwrap();
         assert_eq!(resp.output["password"], "[REDACTED]");

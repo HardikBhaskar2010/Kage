@@ -15,9 +15,11 @@ pub mod tool;
 pub mod policy;
 pub mod sanitizer;
 pub mod bus;
+pub mod audit;
 
 // Re-export primary API surface.
 pub use tool::{KageTool, ToolRequest, ToolResponse, ToolError};
-pub use policy::{PolicyEngine, PermissionTier, PolicyDecision, PolicyContext};
+pub use policy::{PolicyEngine, PermissionTier, PolicyDecision, PolicyContext, AuditFailurePolicy};
 pub use sanitizer::SecretSanitizer;
-pub use bus::ToolBus;
+pub use bus::{ToolBus, PartialPolicyContext};
+pub use audit::{AuditSink, AuditVerifier, AuditReader, CanonicalAuditRecord, CanonicalAuditEntry, ActorType, AuditStatus, AuditError as CoreAuditError};

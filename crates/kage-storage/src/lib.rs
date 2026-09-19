@@ -12,5 +12,6 @@ pub mod schema;
 pub mod audit;
 pub mod workspace;
 
-pub use audit::{AuditDb, AuditRecord, AuditError};
+pub use audit::{AuditDb, AuditError, GENESIS_HASH};
+pub use kage_core::audit::{CanonicalAuditRecord, CanonicalAuditEntry, AuditSink};
 pub use workspace::{WorkspaceDb, WorkspaceRecord, WorkspaceError};

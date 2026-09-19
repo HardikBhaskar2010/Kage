@@ -56,17 +56,37 @@ pub fn apply_audit_schema(conn: &Connection) -> Result<(), SchemaError> {
         PRAGMA journal_mode = WAL;
 
         CREATE TABLE IF NOT EXISTS audit_log (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp   TEXT    NOT NULL,
-            tool_id     TEXT    NOT NULL,
-            request_id  TEXT    NOT NULL UNIQUE,
-            caller_id   TEXT    NOT NULL,
-            tier        INTEGER NOT NULL,
-            decision    TEXT    NOT NULL,
-            args_digest TEXT    NOT NULL,  -- SHA-256 of sanitized args JSON
-            prev_hash   TEXT    NOT NULL,  -- SHA-256 of previous row (hash chain)
-            row_hash    TEXT    NOT NULL   -- SHA-256 of this row's canonical fields
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            sequence          INTEGER NOT NULL UNIQUE,
+            timestamp         TEXT    NOT NULL,
+            request_id        TEXT    NOT NULL,  -- Non-unique: allows two-stage intent (Started) and completion records
+            parent_request_id TEXT,
+            caller_id         TEXT    NOT NULL,
+            actor             TEXT    NOT NULL,
+            tool_id           TEXT    NOT NULL,
+            capability        TEXT    NOT NULL,
+            profile_id        TEXT,
+            tab_id            TEXT,
+            target_id         TEXT,
+            session_id        TEXT,
+            host_instance_id  TEXT,
+            origin            TEXT,
+            tier              INTEGER NOT NULL,
+            decision          TEXT    NOT NULL,
+            confirmation_id   TEXT,
+            args_digest       TEXT    NOT NULL,  -- SHA-256 of sanitized args JSON
+            result_digest     TEXT,              -- SHA-256 of sanitized output JSON
+            status            TEXT    NOT NULL,  -- started, success, denied, failed_closed, cancelled, error
+            duration_ms       INTEGER NOT NULL,
+            error_code        TEXT,
+            prev_hash         TEXT    NOT NULL,  -- SHA-256 of previous row (hash chain)
+            row_hash          TEXT    NOT NULL   -- SHA-256 of this row's canonical fields
         );
+
+        CREATE INDEX IF NOT EXISTS idx_audit_sequence ON audit_log (sequence);
+        CREATE INDEX IF NOT EXISTS idx_audit_request_id ON audit_log (request_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log (timestamp);
+        CREATE INDEX IF NOT EXISTS idx_audit_tool_id ON audit_log (tool_id);
         ",
     )?;
     Ok(())

@@ -40,6 +40,8 @@ fn secret_patterns() -> &'static [Regex] {
             r"(?i)cookie\s*:\s*\S+",
             // Password field values
             r#"(?i)"?password"?\s*[=:]\s*"?\S+"?"#,
+            // Credit card numbers (16 digits with dashes or spaces)
+            r"\b(?:\d{4}[-\s]?){3}\d{4}\b",
         ];
         raw.iter()
             .map(|p| Regex::new(p).expect("static secret pattern must be valid"))
@@ -93,7 +95,8 @@ impl SecretSanitizer {
         [
             "password", "passwd", "secret", "api_key", "apikey", "access_token",
             "refresh_token", "auth_token", "bearer", "private_key", "cookie",
-            "session_id", "session_token", "csrf_token",
+            "session_id", "session_token", "csrf_token", "credit_card", "card_number",
+            "cvv", "cvc", "ssn", "authorization", "auth_header",
         ]
         .iter()
         .any(|&pat| lower.contains(pat))

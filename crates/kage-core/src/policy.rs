@@ -50,6 +50,28 @@ impl std::fmt::Display for PermissionTier {
     }
 }
 
+/// Failure policy when audit ledger append fails (KAGE-SEC-003, INV-05).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditFailurePolicy {
+    /// Mutating / privileged actions MUST fail closed: No audit, no privileged action.
+    FailClosed,
+    /// Non-sensitive read telemetry may degrade gracefully with warning.
+    DegradeGraceful,
+}
+
+impl PermissionTier {
+    /// Determines whether an audit write failure must abort execution (INV-05).
+    pub fn audit_failure_policy(&self) -> AuditFailurePolicy {
+        match self {
+            PermissionTier::ReadOnly => AuditFailurePolicy::DegradeGraceful,
+            PermissionTier::StateMutating
+            | PermissionTier::External
+            | PermissionTier::Dangerous => AuditFailurePolicy::FailClosed,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Policy context — inputs to the decision function
 // ---------------------------------------------------------------------------
