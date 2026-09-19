@@ -709,21 +709,52 @@ async fn contract_gate_inv_12_surface_identity_is_never_inferred() {
 }
 
 // ---------------------------------------------------------------------------
-// RendererTerminationStatus::IntegrityFailure is distinct from LaunchFailed
+// RendererTerminationStatus taxonomy: named variants are distinct + Unknown is preserved
 // ---------------------------------------------------------------------------
 #[test]
-fn contract_gate_integrity_failure_is_distinct_variant() {
-    use kage_browser::RendererTerminationStatus;
+fn contract_gate_termination_status_taxonomy() {
+    use kage_browser::{CefTerminationStatus, RendererTerminationStatus};
 
+    // Named variants are all distinct from each other.
     let integrity = RendererTerminationStatus::IntegrityFailure;
-    let launch = RendererTerminationStatus::LaunchFailed;
+    let launch    = RendererTerminationStatus::LaunchFailed;
+    let crashed   = RendererTerminationStatus::Crashed;
+    let unknown   = RendererTerminationStatus::Unknown(0xDEAD);
 
-    assert_ne!(
-        integrity, launch,
-        "IntegrityFailure and LaunchFailed must be distinct: OS-integrity kills are classifiable separately"
+    assert_ne!(integrity, launch,   "IntegrityFailure != LaunchFailed");
+    assert_ne!(integrity, crashed,  "IntegrityFailure != Crashed");
+    assert_ne!(integrity, unknown,  "IntegrityFailure != Unknown");
+    assert_ne!(launch,    crashed,  "LaunchFailed != Crashed");
+    assert_ne!(launch,    unknown,  "LaunchFailed != Unknown");
+
+    // From<CefTerminationStatus>: named CEF variants map to named KAGE variants directly.
+    assert_eq!(
+        RendererTerminationStatus::from(CefTerminationStatus::IntegrityFailure),
+        RendererTerminationStatus::IntegrityFailure,
+        "CEF IntegrityFailure must map directly — not via Unknown"
     );
-    // IntegrityFailure is never confused with a plain crash
-    assert_ne!(integrity, RendererTerminationStatus::Crashed);
+    assert_eq!(
+        RendererTerminationStatus::from(CefTerminationStatus::LaunchFailed),
+        RendererTerminationStatus::LaunchFailed,
+        "CEF LaunchFailed must map directly — not silently to Crashed"
+    );
+
+    // Unknown CEF discriminants must NOT be silently renamed to any named security event.
+    // They must surface as RendererTerminationStatus::Unknown(raw).
+    let raw: u32 = 0xCAFE;
+    let mapped = RendererTerminationStatus::from(CefTerminationStatus::Unknown(raw));
+    assert!(
+        matches!(mapped, RendererTerminationStatus::Unknown(r) if r == raw),
+        "Unknown CEF discriminant must map to Unknown(raw), not be silently reinterpreted"
+    );
+    assert_ne!(
+        mapped,
+        RendererTerminationStatus::LaunchFailed,
+        "Unknown must NOT silently become LaunchFailed"
+    );
+    assert_ne!(
+        mapped,
+        RendererTerminationStatus::IntegrityFailure,
+        "Unknown must NOT silently become IntegrityFailure"
+    );
 }
-
-
