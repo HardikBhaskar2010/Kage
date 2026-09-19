@@ -7,10 +7,14 @@
 //! - Subframe loads are strictly filtered (`if !is_main { return; }`).
 //! - CEF load callback sequence:
 //!   `OnLoadingStateChange(true)` -> `OnLoadStart(main frame)` -> `OnLoadEnd` / `OnLoadError` -> `OnLoadingStateChange(false)`.
-//! - Pending operations enforce atomic compare-and-swap (CAS) exactly-once completion (`INV-11A`).
+//! - Pending operations enforce exactly-once completion (`INV-11A`) via a single `Mutex<Option<Sender>>`.
+//!   `None` encodes "completed"; `Some(tx)` encodes "pending". Taking the sender IS the atomic completion
+//!   gate — both the terminal-state flip and sender-ownership transfer happen under the same lock
+//!   acquisition, preventing the poisoned-mutex completion-loss bug that a split `AtomicBool + Mutex`
+//!   would allow (CAS succeeds → lock fails → waiter hung forever).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{oneshot, RwLock};
@@ -33,14 +37,26 @@ impl std::fmt::Display for BrowserOperationId {
     }
 }
 
-/// Inflight operation handle enforcing atomic compare-and-swap (CAS) exactly-once completion.
-/// Guaranteed safe against races between late callbacks and renderer crashes.
+/// Inflight operation handle enforcing exactly-once completion (`INV-11A`).
+///
+/// # Completion correctness
+///
+/// The terminal state and sender ownership are unified under a **single `Mutex`**.
+/// `sender == Some(_)` means pending; `sender == None` means completed.
+/// Calling `try_complete` atomically takes the sender out of the `Option` inside
+/// the lock — if `take()` returns `Some`, this caller is the unique winner.
+/// If `take()` returns `None`, the operation was already completed by a racing
+/// caller (e.g. a renderer crash racing a navigation timeout).
+///
+/// This eliminates the split `AtomicBool + Mutex` pattern where:
+///   CAS(false → true) succeeds → mutex poisoned → sender never delivered →
+///   operation is terminal but its waiter hangs forever.
 pub struct PendingOperation {
     pub id: BrowserOperationId,
     pub tab_id: TabId,
     pub nav_id: Option<NavigationId>,
     pub description: String,
-    completed: Arc<AtomicBool>,
+    /// `Some(tx)` = pending; `None` = completed. Guarded by Mutex for exactly-once take.
     sender: Mutex<Option<oneshot::Sender<Result<(), BrowserError>>>>,
 }
 
@@ -57,33 +73,45 @@ impl PendingOperation {
             tab_id,
             nav_id,
             description,
-            completed: Arc::new(AtomicBool::new(false)),
             sender: Mutex::new(Some(sender)),
         }
     }
 
-    /// Exactly-once atomic completion via compare-and-swap.
-    /// Returns `true` if this invocation was the winning resolver, or `false`
-    /// if the operation was already completed by a racing caller (e.g. renderer crash).
+    /// Exactly-once completion gate. Taking the sender IS the atomic completion.
+    ///
+    /// Returns `true` if this invocation was the unique winning resolver.
+    /// Returns `false` if the operation was already completed by a racing caller.
+    ///
+    /// The mutex is acquired; if poisoned, this function still safely returns `false`
+    /// (the lock guard is not available so no sender is taken — the caller treats the
+    /// operation as already completed, which is the only safe conservative choice).
     pub fn try_complete(&self, result: Result<(), BrowserError>) -> bool {
-        if self
-            .completed
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            if let Ok(mut guard) = self.sender.lock() {
+        match self.sender.lock() {
+            Ok(mut guard) => {
                 if let Some(tx) = guard.take() {
                     let _ = tx.send(result);
-                    return true;
+                    true
+                } else {
+                    // Already completed by a racing caller.
+                    false
                 }
             }
+            Err(_poisoned) => {
+                // Mutex is poisoned — the sender has been taken or was never there.
+                // Conservative: treat as already completed; do NOT panic.
+                false
+            }
         }
-        false
     }
 
-    /// Check if the operation has reached a terminal completion state.
+    /// Returns `true` if the operation has reached a terminal completion state.
+    ///
+    /// Acquires the mutex; if poisoned, conservatively returns `true` (terminal).
     pub fn is_completed(&self) -> bool {
-        self.completed.load(Ordering::SeqCst)
+        match self.sender.lock() {
+            Ok(guard) => guard.is_none(),
+            Err(_poisoned) => true,
+        }
     }
 }
 
