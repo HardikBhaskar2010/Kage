@@ -18,7 +18,8 @@ use crate::events::{
 use crate::navigation::NavigationController;
 use crate::profile::ProfileManager;
 use crate::tab::{
-    ProfileId, RendererCrashDiagnostics, Tab, TabHealth, TabId, TabLifecycle, TabSummary,
+    BrowserSurfaceId, ProfileId, RendererCrashDiagnostics, Tab, TabHealth, TabId, TabLifecycle,
+    TabSummary,
 };
 
 /// Central browser controller managing active and background tabs.
@@ -156,16 +157,19 @@ impl TabManager {
     }
 
     /// Bind physical surface ID to a Tab (Surface / HWND decoupled from identity).
+    ///
+    /// `surface_id` is a `BrowserSurfaceId` newtype, not a raw `usize`, to prevent
+    /// accidental aliasing with array indices or other opaque integer handles.
     pub async fn bind_browser_surface(
         &self,
         tab_id: TabId,
-        surface_id: usize,
+        surface_id: BrowserSurfaceId,
     ) -> Result<(), BrowserError> {
         let tab = self.get_tab(tab_id).await?;
         *tab.surface_id.write().await = Some(surface_id);
         info!(
             tab_id = %tab_id,
-            surface_id = surface_id,
+            surface_id = %surface_id,
             "bound surface descriptor to tab"
         );
         Ok(())
