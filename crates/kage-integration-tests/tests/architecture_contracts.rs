@@ -767,66 +767,70 @@ fn contract_gate_termination_status_taxonomy() {
 // terminal ownership token. `into_inner()` must recover the guard and deliver.
 //
 // Design (test-architect skill): test *behavior* observable to caller and
-// waiter, not internal atomic state. Two verifiable properties:
-//   1. into_inner() recovers a live value from a poisoned Mutex<Option<T>>.
-//   2. PendingOperation exactly-once: first call delivers, second returns false.
+// ---------------------------------------------------------------------------
+// Poisoned-Mutex PendingOperation Direct Regression Gate
+//
+// Proves that when PendingOperation.sender is specifically poisoned (via thread
+// panic while holding the internal sender mutex):
+//   1. PendingOperation::try_complete() recovers via into_inner()
+//   2. The result is successfully delivered through the channel to the receiver
+//   3. A racing/subsequent try_complete() returns false (already completed)
+//   4. is_completed() returns true
 // ---------------------------------------------------------------------------
 #[test]
 fn contract_gate_pending_op_poisoned_mutex_delivers_result() {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use tokio::sync::oneshot;
     use kage_browser::{BrowserError, BrowserOperationId, PendingOperation, TabId};
 
-    // --- Property 1: into_inner() recovery ---
-    // We poison a Mutex<Option<u32>> via a real std::thread panic while the lock
-    // is held, then verify the value is recoverable — this is the exact recovery
-    // path used inside try_complete / is_completed.
-    let companion: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(Some(42)));
-    let companion2 = Arc::clone(&companion);
-    let handle = std::thread::spawn(move || {
-        let _guard = companion2.lock().unwrap();
-        panic!("intentional: poisoning the mutex for regression test");
-    });
-    let _ = handle.join(); // thread panicked — companion is now poisoned
-
-    let recovered = match companion.lock() {
-        Ok(g)  => g.as_ref().copied(),
-        Err(p) => p.into_inner().as_ref().copied(), // same path as try_complete
-    };
-    assert_eq!(
-        recovered,
-        Some(42),
-        "into_inner() must recover a live value from a poisoned mutex; \
-         this is the recovery path in PendingOperation::try_complete"
-    );
-
-    // --- Property 2: PendingOperation exactly-once delivery ---
-    // Normal (un-poisoned) path: first try_complete delivers, second returns false.
-    // This is a separate, focused assertion — isolation per test-architect patterns.
-    let (tx, rx) = oneshot::channel::<Result<(), BrowserError>>();
+    let (tx, mut rx) = oneshot::channel::<Result<(), BrowserError>>();
     let tab_id = TabId::new();
     let op = Arc::new(PendingOperation::new(
-        BrowserOperationId::new(),
+        BrowserOperationId(1),
         tab_id,
         None,
-        "poison-regression-exactly-once".to_string(),
+        "poisoned-op-direct-regression".to_string(),
         tx,
     ));
     let op2 = Arc::clone(&op);
 
-    // First completion must win.
+    // 1. Verify mutex is not poisoned initially
+    assert!(!op.is_poisoned_for_test(), "PendingOperation.sender must start unpoisoned");
+
+    // 2. Deliberately poison op.sender specifically via thread panic while holding the lock
+    op.poison_for_test();
+    assert!(
+        op.is_poisoned_for_test(),
+        "PendingOperation.sender mutex must be specifically poisoned"
+    );
+
+    // 3. Call try_complete on the poisoned PendingOperation
+    // into_inner() recovers the guard, extracts Some(tx), and completes the waiter.
     let first = op.try_complete(Ok(()));
-    assert!(first, "first try_complete must return true");
+    assert!(
+        first,
+        "try_complete on poisoned PendingOperation must return true (winning resolution)"
+    );
 
-    // Receiver must have gotten the value delivered.
-    let received = rx.try_recv()
-        .expect("receiver must hold the value after winning try_complete");
-    assert!(received.is_ok(), "receiver must see the Ok(()) result that was sent");
+    // 4. Receiver must successfully receive the delivered Ok(())
+    let received = rx
+        .try_recv()
+        .expect("receiver must hold the result delivered through poisoned PendingOperation");
+    assert!(
+        received.is_ok(),
+        "receiver must observe Ok(()) delivered despite mutex poisoning"
+    );
 
-    // Second completion must be rejected — exactly-once guarantee.
+    // 5. Subsequent completion must be rejected (exactly-once semantics preserved)
     let second = op2.try_complete(Err(BrowserError::TabNotFound(tab_id)));
-    assert!(!second, "second try_complete must return false — already completed");
+    assert!(
+        !second,
+        "second try_complete must return false — sender already consumed"
+    );
 
-    // is_completed must reflect terminal state.
-    assert!(op.is_completed(), "is_completed must be true after try_complete succeeded");
+    // 6. is_completed must report true even through poisoned mutex
+    assert!(
+        op.is_completed(),
+        "is_completed must return true after successful try_complete"
+    );
 }

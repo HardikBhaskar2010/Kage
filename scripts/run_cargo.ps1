@@ -21,8 +21,9 @@ $env:CXX_x86_64_pc_windows_msvc = "$llvm_bin\cl.exe"
 $env:CFLAGS_x86_64_pc_windows_msvc = "--target=x86_64-pc-windows-msvc"
 $env:CXXFLAGS_x86_64_pc_windows_msvc = "--target=x86_64-pc-windows-msvc"
 
-# Compiler for CMake
+# Compiler and Linker for CMake
 $env:CC = "$llvm_bin\cl.exe"
 $env:CXX = "$llvm_bin\cl.exe"
+$env:CMAKE_LINKER = "$llvm_bin\lld-link.exe"
 
 & cargo @args
