@@ -4,12 +4,41 @@ scratch/
 *.tmp
 *.log
 
-# Dependencies & Build artifacts (Tauri, Node, Rust)
+# Dependencies & Build artifacts (Tauri, Node, Rust, xwin, msi)
 node_modules/
 dist/
 **/target/
 build/
 .cache/
+.xwin/
+.xwin-cache/
+.msi-test/
+cef_cache/
+cef_bundle/
+kage_profiles/
+
+# Native binaries, debug symbols & libraries
+*.exe
+*.dll
+*.lib
+*.pdb
+*.exp
+*.ilk
+*.tar.bz2
+*.tar.gz
+*.zip
+
+# Database & SQLite files
+*.db
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
 
 # OS and Editor metadata
 .DS_Store
@@ -18,3 +47,4 @@ Thumbs.db
 *.swo
 .vscode/
 .idea/
+
