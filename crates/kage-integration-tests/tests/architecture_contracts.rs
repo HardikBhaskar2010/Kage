@@ -687,6 +687,43 @@ async fn contract_gate_inv_12_surface_identity_is_never_inferred() {
         matches!(res, Err(BrowserError::TabNotFound(..))),
         "INV-12: Unregistered TabId cannot resolve to an ambient surface"
     );
+
+    // Stage 4: BrowserSurfaceId is a UUID-backed newtype — not a raw usize.
+    // Binding a surface must use BrowserSurfaceId; this fails to compile with a bare usize.
+    {
+        use kage_browser::BrowserSurfaceId;
+        let surface_id = BrowserSurfaceId::new();
+        manager.bind_browser_surface(tab_id, surface_id).await.unwrap();
+        let summary = tab.summary().await;
+        assert_eq!(
+            summary.surface_id,
+            Some(surface_id),
+            "INV-12: BrowserSurfaceId bound to TabSummary surface_id"
+        );
+        // Display format must start with "surface:" proving UUID-backed newtype semantics.
+        assert!(
+            format!("{}", surface_id).starts_with("surface:"),
+            "INV-12: BrowserSurfaceId Display format must be 'surface:<uuid>'"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RendererTerminationStatus::IntegrityFailure is distinct from LaunchFailed
+// ---------------------------------------------------------------------------
+#[test]
+fn contract_gate_integrity_failure_is_distinct_variant() {
+    use kage_browser::RendererTerminationStatus;
+
+    let integrity = RendererTerminationStatus::IntegrityFailure;
+    let launch = RendererTerminationStatus::LaunchFailed;
+
+    assert_ne!(
+        integrity, launch,
+        "IntegrityFailure and LaunchFailed must be distinct: OS-integrity kills are classifiable separately"
+    );
+    // IntegrityFailure is never confused with a plain crash
+    assert_ne!(integrity, RendererTerminationStatus::Crashed);
 }
 
 
