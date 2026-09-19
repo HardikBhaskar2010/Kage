@@ -96,7 +96,29 @@ graph TD
 
 ---
 
-## 2. Complete Specification Directory
+## 2. Current Milestone Status
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                             KAGE MILESTONE STATUS                                │
+│                                                                                  │
+│  PHASE 1  — Governance Subsystem                 ██████████  SEALED (100%)       │
+│  PHASE 2A — CEF Engine Infrastructure            ██████████  SEALED (100%)       │
+│  PHASE 2B — Real CEF Lifecycle                   ██████████  SEALED (100%)       │
+│  PHASE 2C — Production Tauri + CEF Composition   ██████████  SEALED (100%)       │
+│  PHASE 2D — CEF 152 Sandbox Release Packaging    ███████░░░  PENDING (CEF-03b-D) │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│  OVERALL PHASE 2: PRODUCTION-FUNCTIONALLY COMPLETE (Security Packaging Pending)  │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│  PHASE 3  — Browser Lifecycle & Control Plane    ████████░░  CONTROL-PLANE OK    │
+│             (Control-plane verified; real CEF callback/crash/profile E2E pending)│
+│  FULL KAGE AGENT CONTROL CONTRACTS:              ░░░░░░░░░░  NOT SEALED          │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Complete Specification Directory
 
 ### 01 · Product Definition
 | Document | Document ID | Description |
@@ -116,6 +138,7 @@ graph TD
 | [Browser_Shell.md](02-architecture/Browser_Shell.md) | `KAGE-ARCH-006` | Native browser shell, tab strip lifecycle, omnibox command routing, window chrome, and crash recovery. |
 | [Performance_Benchmarks.md](02-architecture/Performance_Benchmarks.md) | `KAGE-ARCH-007` | Quantitative budgets: <150MB baseline RAM, <16ms frame times, <100ms tool execution. |
 | [Migration_to_Chromium_Fork.md](02-architecture/Migration_to_Chromium_Fork.md) | `KAGE-ARCH-008` | Long-term upgrade path from CEF library embedding to full custom Chromium source fork. |
+| [Architecture_Contracts.md](02-architecture/Architecture_Contracts.md) | `KAGE-ARCH-009` | The 10 Inviolable Architecture Contracts, threat models, and automated CI/review verification gates. |
 
 ### 03 · Core Subsystems
 | Document | Document ID | Description |
@@ -165,7 +188,7 @@ graph TD
 
 ---
 
-## 3. Subsystem Cross-Reference Matrix
+## 4. Subsystem Cross-Reference Matrix
 
 How the primary subsystems interact with one another:
 
