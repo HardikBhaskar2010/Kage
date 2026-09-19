@@ -269,9 +269,11 @@ impl NavigationState {
     }
 }
 
-/// CEF process termination status mapped from the real cef-rs 152 `TerminationStatus` enum.
+/// CEF process termination status mapped from the real cef-rs 152 `TerminationStatus` type.
 ///
-/// Variants mirror the cef-rs 152 `cef::TerminationStatus` discriminants exactly:
+/// Note: `cef::TerminationStatus` in cef-rs is a struct with associated constants,
+/// not a Rust enum. The named termination status values below correspond to the
+/// well-defined CEF 152 constants:
 ///   `ProcessCrashed`, `ProcessOom`, `ProcessWasKilled`, `AbnormalTermination`,
 ///   `LaunchFailed`, `IntegrityFailure`.
 /// An `Unknown(u32)` catch-all preserves any future CEF additions without silent reinterpretation.
@@ -281,11 +283,11 @@ pub enum CefTerminationStatus {
     ProcessWasKilled,
     ProcessCrashed,
     ProcessOom,
-    /// Renderer process failed to start. Real CEF 152 discriminant.
+    /// Renderer process failed to start. Named CEF 152 termination status value.
     LaunchFailed,
-    /// Renderer terminated by OS integrity/security enforcement. Real CEF 152 discriminant.
+    /// Renderer terminated by OS integrity/security enforcement. Named CEF 152 termination status value.
     IntegrityFailure,
-    /// Unknown raw discriminant not present in the CEF 152 binding.
+    /// Raw value not matching any named CEF 152 termination status.
     /// Carries the raw value for forensic logging; must NOT be reinterpreted as any
     /// named security event.
     Unknown(u32),
@@ -373,11 +375,16 @@ impl std::fmt::Display for BrowserSurfaceId {
 /// ## State Transitions
 /// - `Healthy`  → `Unresponsive` : CEF hung-renderer detection fires.
 /// - `Healthy`  → `RendererTerminated` : CEF `OnRenderProcessTerminated` fires;
-///   `renderer_epoch` on the `Tab` is incremented at this point.
-/// - `RendererTerminated` → `Recovering` : Host explicitly initiates recovery.
-/// - `Recovering` → `Healthy` : CEF `OnRenderViewReady` fires **and** the callback's
-///   `renderer_epoch` matches `Tab::renderer_epoch`. A stale readiness event from a
-///   previous crash-recovery cycle (epoch mismatch) MUST be discarded.
+///   the host increments `Tab::renderer_epoch` at this point.
+/// - `RendererTerminated` → `Recovering` : Host explicitly initiates recovery and
+///   captures the current `Tab::renderer_epoch` as `recovery_epoch`.
+/// - `Recovering` → `Healthy` : CEF `OnRenderViewReady` fires.
+///   **Important:** CEF does NOT provide an epoch argument in `OnRenderViewReady`.
+///   The host validates:
+///     (a) the tab's current health is `Recovering`, AND
+///     (b) `Tab::renderer_epoch` still matches the `recovery_epoch` stored in
+///         the `Recovering` variant (proving no newer crash cycle superseded this one).
+///   If either check fails, the callback is silently discarded.
 ///   KAGE MUST NOT self-transition to `Healthy` on a timer or assumption.
 /// - `Unresponsive` → `Healthy` : CEF reports renderer is responsive again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -389,8 +396,10 @@ pub enum TabHealth {
         diagnostics: RendererCrashDiagnostics,
     },
     Recovering {
-        /// Epoch value at which this recovery was initiated.
-        /// Used to discard stale `OnRenderViewReady` events from prior crash cycles.
+        /// Epoch value captured from `Tab::renderer_epoch` when this recovery was initiated.
+        /// The `OnRenderViewReady` handler compares this against the current epoch to
+        /// detect and discard stale callbacks from prior crash cycles.
+        /// CEF does not supply this value — it is host-side recovery-generation tracking only.
         recovery_epoch: u64,
     },
 }
@@ -456,13 +465,20 @@ pub struct Tab {
     pub can_go_back: Arc<AtomicBool>,
     pub can_go_forward: Arc<AtomicBool>,
     pub active_navigation_record: Arc<RwLock<Option<NavigationRecord>>>,
-    /// Monotonically increasing renderer recovery epoch.
+    /// Host-side renderer recovery generation counter.
     ///
-    /// Incremented each time the renderer terminates and a new recovery is initiated.
-    /// `OnRenderViewReady` callbacks must compare their captured epoch against this
-    /// value before transitioning `TabHealth` to `Healthy`. A stale readiness event
-    /// (epoch < current) must be silently discarded to prevent incorrect revival of
-    /// a tab that has already entered a new crash-recovery cycle.
+    /// This is NOT a value that CEF reports. `OnRenderViewReady` carries no epoch argument.
+    /// It is a host-maintained monotonic counter that the host increments each time the
+    /// renderer terminates. The current value is captured into `TabHealth::Recovering {
+    /// recovery_epoch }` when recovery begins.
+    ///
+    /// When `OnRenderViewReady` fires, the host validates:
+    ///   - tab health is currently `Recovering`, AND
+    ///   - the stored `recovery_epoch` == current `renderer_epoch.load()`
+    ///
+    /// If either is false, the callback is a stale event from a prior crash cycle
+    /// and must be silently discarded. This prevents incorrect revival of a tab
+    /// that has already entered a subsequent crash-recovery cycle.
     pub renderer_epoch: Arc<AtomicU64>,
 }
 
