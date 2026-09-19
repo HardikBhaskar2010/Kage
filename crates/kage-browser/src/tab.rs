@@ -1,0 +1,425 @@
+//! Tab identity, orthogonal states, and internal representations.
+//!
+//! Enforces:
+//! - `INV-10`: Every browser tab has an explicit (TabId, ProfileId, Option<CefBrowserId>) relationship.
+//! - `INV-12`: Browser and surface identity are explicit and never inferred:
+//!   - Authoritative browser identity: `(TabId, ProfileId, Option<CefBrowserId>)`.
+//!   - CDP target binding: `TargetId` (associated with browser identity during Phase 4, not identity itself).
+//!   - CDP session: `SessionId` (ephemeral multiplexed client session attachment, not identity).
+//!   - BrowserSurface binding: `(TabId, BrowserSurfaceId)` (HWND/DPI/bounds decoupled from tab).
+//!   - Never manufacture synthetic TargetIds before real CDP discovery.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
+use uuid::Uuid;
+
+/// Authoritative unique identifier for a browser tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TabId(pub Uuid);
+
+impl TabId {
+    pub fn new() -> Self {
+        TabId(Uuid::new_v4())
+    }
+}
+
+impl Default for TabId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for TabId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Profile identifier defining storage and cookie partition.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ProfileId(pub String);
+
+impl ProfileId {
+    pub fn new(id: impl Into<String>) -> Self {
+        ProfileId(id.into())
+    }
+
+    pub fn personal() -> Self {
+        ProfileId("personal".to_string())
+    }
+
+    pub fn work() -> Self {
+        ProfileId("work".to_string())
+    }
+
+    pub fn agent_sandbox() -> Self {
+        ProfileId("agent_sandbox".to_string())
+    }
+
+    pub fn temporary() -> Self {
+        ProfileId(format!("temp_{}", Uuid::new_v4().simple()))
+    }
+}
+
+impl std::fmt::Display for ProfileId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Authoritative browser identity: (TabId, ProfileId, Option<CefBrowserId>).
+///
+/// Invariant: CefBrowserId is assigned strictly when real CEF allocates a browser.
+/// CDP TargetId and SessionId are associations, never browser identity.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BrowserIdentity {
+    pub tab_id: TabId,
+    pub profile_id: ProfileId,
+    pub cef_browser_id: Option<i32>,
+}
+
+impl BrowserIdentity {
+    pub fn new(tab_id: TabId, profile_id: ProfileId) -> Self {
+        Self {
+            tab_id,
+            profile_id,
+            cef_browser_id: None,
+        }
+    }
+
+    pub fn with_cef_browser(tab_id: TabId, profile_id: ProfileId, cef_browser_id: i32) -> Self {
+        Self {
+            tab_id,
+            profile_id,
+            cef_browser_id: Some(cef_browser_id),
+        }
+    }
+
+    pub fn is_bound_to_cef(&self) -> bool {
+        self.cef_browser_id.is_some()
+    }
+}
+
+/// CDP target association established once CDP discovers the page target (Phase 4).
+/// This is an association with BrowserIdentity, not an expanded identity.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CdpBinding {
+    pub target_id: String,
+}
+
+impl CdpBinding {
+    pub fn new(target_id: impl Into<String>) -> Self {
+        Self {
+            target_id: target_id.into(),
+        }
+    }
+}
+
+/// CDP session attachment representing an active multiplexed client session (Phase 4).
+/// Sessions are ephemeral connection handles and do NOT form part of the browser's identity.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CdpSession {
+    pub session_id: String,
+}
+
+impl CdpSession {
+    pub fn new(session_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+        }
+    }
+}
+
+/// High-level lifecycle stage of a browser tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TabLifecycle {
+    Created,
+    Active,
+    Closing,
+    Closed,
+}
+
+/// Monotonic per-tab navigation attempt generation identifier.
+/// Prevents callback overlap races (e.g. rapid navigate(A) followed by navigate(B)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NavigationId(pub u64);
+
+impl std::fmt::Display for NavigationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
+/// Origin or trigger source of a navigation attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NavigationSource {
+    Programmatic,
+    UserGesture,
+    HistoryBack,
+    HistoryForward,
+    Reload,
+    Redirect,
+    Restore,
+    Unknown,
+}
+
+/// Specific reason for navigation cancellation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NavigationCancelCause {
+    UserStop,
+    Superseded,
+    RendererCrashed,
+    BrowserClosing,
+    CefAborted,
+}
+
+/// Comprehensive navigation record storing correlation metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavigationRecord {
+    pub navigation_id: NavigationId,
+    pub source: NavigationSource,
+    pub requested_url: String,
+    pub committed_url: Option<String>,
+    pub final_url: Option<String>,
+    pub cef_request_id: Option<u64>,
+    pub started_at_ms: u64,
+    pub committed_at_ms: Option<u64>,
+    pub finished_at_ms: Option<u64>,
+}
+
+impl NavigationRecord {
+    pub fn new(
+        navigation_id: NavigationId,
+        source: NavigationSource,
+        requested_url: String,
+        started_at_ms: u64,
+    ) -> Self {
+        Self {
+            navigation_id,
+            source,
+            requested_url,
+            committed_url: None,
+            final_url: None,
+            cef_request_id: None,
+            started_at_ms,
+            committed_at_ms: None,
+            finished_at_ms: None,
+        }
+    }
+}
+
+/// Navigation status of the tab's primary frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NavigationState {
+    Idle,
+    Loading {
+        id: NavigationId,
+        requested_url: String,
+        effective_url: Option<String>,
+        source: NavigationSource,
+        cef_request_id: Option<u64>,
+        started_at_ms: u64,
+    },
+    Committed {
+        id: NavigationId,
+        url: String,
+        source: NavigationSource,
+        cef_request_id: Option<u64>,
+    },
+    Completed {
+        id: NavigationId,
+        url: String,
+        http_status: i32,
+    },
+    Failed {
+        id: NavigationId,
+        url: String,
+        error_code: i32,
+        reason: String,
+    },
+    Cancelled {
+        id: NavigationId,
+        url: String,
+        cause: NavigationCancelCause,
+    },
+    SameDocumentNavigated {
+        url: String,
+    },
+}
+
+impl NavigationState {
+    pub fn is_loading(&self) -> bool {
+        matches!(self, NavigationState::Loading { .. } | NavigationState::Committed { .. })
+    }
+
+    pub fn navigation_id(&self) -> Option<NavigationId> {
+        match self {
+            NavigationState::Loading { id, .. }
+            | NavigationState::Committed { id, .. }
+            | NavigationState::Completed { id, .. }
+            | NavigationState::Failed { id, .. }
+            | NavigationState::Cancelled { id, .. } => Some(*id),
+            NavigationState::Idle | NavigationState::SameDocumentNavigated { .. } => None,
+        }
+    }
+}
+
+/// CEF process termination status mapped from cef-rs 152 TerminationStatus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CefTerminationStatus {
+    AbnormalTermination,
+    ProcessWasKilled,
+    ProcessCrashed,
+    ProcessOom,
+    Unknown(i32),
+}
+
+/// Disaggregated renderer termination status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RendererTerminationStatus {
+    Crashed,
+    Oom,
+    Killed,
+    Abnormal,
+    LaunchFailed,
+}
+
+impl From<CefTerminationStatus> for RendererTerminationStatus {
+    fn from(status: CefTerminationStatus) -> Self {
+        match status {
+            CefTerminationStatus::ProcessCrashed => RendererTerminationStatus::Crashed,
+            CefTerminationStatus::ProcessOom => RendererTerminationStatus::Oom,
+            CefTerminationStatus::ProcessWasKilled => RendererTerminationStatus::Killed,
+            CefTerminationStatus::AbnormalTermination => RendererTerminationStatus::Abnormal,
+            CefTerminationStatus::Unknown(_) => RendererTerminationStatus::LaunchFailed,
+        }
+    }
+}
+
+/// Diagnostic metadata captured when a renderer process terminates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RendererCrashDiagnostics {
+    pub termination_status: RendererTerminationStatus,
+    pub raw_cef_status: CefTerminationStatus,
+    pub observed_at_ms: u64,
+}
+
+/// Process and responsiveness health status of the tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TabHealth {
+    Healthy,
+    Unresponsive,
+    RendererTerminated {
+        status: RendererTerminationStatus,
+        diagnostics: RendererCrashDiagnostics,
+    },
+    Recovering,
+}
+
+impl TabHealth {
+    pub fn is_healthy(&self) -> bool {
+        matches!(self, TabHealth::Healthy)
+    }
+
+    pub fn is_crashed(&self) -> bool {
+        matches!(self, TabHealth::RendererTerminated { .. })
+    }
+}
+
+/// Serializable snapshot of tab metadata across all orthogonal axes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabSummary {
+    pub identity: BrowserIdentity,
+    pub cdp: Option<CdpBinding>,
+    pub surface_id: Option<usize>,
+    pub lifecycle: TabLifecycle,
+    pub navigation: NavigationState,
+    pub health: TabHealth,
+    pub url: String,
+    pub title: String,
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
+}
+
+impl TabSummary {
+    pub fn id(&self) -> TabId {
+        self.identity.tab_id
+    }
+
+    pub fn profile_id(&self) -> &ProfileId {
+        &self.identity.profile_id
+    }
+
+    pub fn cef_browser_id(&self) -> Option<i32> {
+        self.identity.cef_browser_id
+    }
+}
+
+/// Internal thread-safe representation of a single browser tab.
+pub struct Tab {
+    pub id: TabId,
+    pub profile_id: ProfileId,
+    pub identity: Arc<RwLock<BrowserIdentity>>,
+    pub cdp: Arc<RwLock<Option<CdpBinding>>>,
+    pub surface_id: Arc<RwLock<Option<usize>>>,
+    pub lifecycle: Arc<RwLock<TabLifecycle>>,
+    pub navigation: Arc<RwLock<NavigationState>>,
+    pub health: Arc<RwLock<TabHealth>>,
+    pub url: Arc<RwLock<String>>,
+    pub title: Arc<RwLock<String>>,
+    pub can_go_back: Arc<AtomicBool>,
+    pub can_go_forward: Arc<AtomicBool>,
+    pub active_navigation_record: Arc<RwLock<Option<NavigationRecord>>>,
+}
+
+impl Tab {
+    pub fn new(id: TabId, profile_id: ProfileId, initial_url: impl Into<String>) -> Self {
+        let initial_url = initial_url.into();
+        let identity = BrowserIdentity::new(id, profile_id.clone());
+
+        Self {
+            id,
+            profile_id,
+            identity: Arc::new(RwLock::new(identity)),
+            cdp: Arc::new(RwLock::new(None)),
+            surface_id: Arc::new(RwLock::new(None)),
+            lifecycle: Arc::new(RwLock::new(TabLifecycle::Created)),
+            navigation: Arc::new(RwLock::new(NavigationState::Idle)),
+            health: Arc::new(RwLock::new(TabHealth::Healthy)),
+            url: Arc::new(RwLock::new(initial_url)),
+            title: Arc::new(RwLock::new("New Tab".to_string())),
+            can_go_back: Arc::new(AtomicBool::new(false)),
+            can_go_forward: Arc::new(AtomicBool::new(false)),
+            active_navigation_record: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Snapshot current tab status across all orthogonal axes.
+    pub async fn summary(&self) -> TabSummary {
+        let identity = self.identity.read().await.clone();
+        let cdp = self.cdp.read().await.clone();
+        let surface_id = *self.surface_id.read().await;
+        let lifecycle = *self.lifecycle.read().await;
+        let navigation = self.navigation.read().await.clone();
+        let health = self.health.read().await.clone();
+        let url = self.url.read().await.clone();
+        let title = self.title.read().await.clone();
+        let can_go_back = self.can_go_back.load(Ordering::Relaxed);
+        let can_go_forward = self.can_go_forward.load(Ordering::Relaxed);
+
+        TabSummary {
+            identity,
+            cdp,
+            surface_id,
+            lifecycle,
+            navigation,
+            health,
+            url,
+            title,
+            can_go_back,
+            can_go_forward,
+        }
+    }
+}
