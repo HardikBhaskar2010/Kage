@@ -82,36 +82,39 @@ impl PendingOperation {
     /// Returns `true` if this invocation was the unique winning resolver.
     /// Returns `false` if the operation was already completed by a racing caller.
     ///
-    /// The mutex is acquired; if poisoned, this function still safely returns `false`
-    /// (the lock guard is not available so no sender is taken — the caller treats the
-    /// operation as already completed, which is the only safe conservative choice).
+    /// # Mutex poisoning
+    ///
+    /// If the mutex is poisoned the guard is **recovered** via `into_inner()` rather
+    /// than discarding it. Returning `false` on a poisoned lock without inspecting
+    /// the inner value would be wrong: the sender may still be `Some(tx)`, meaning
+    /// the operation is NOT completed — dropping without sending would leave the
+    /// waiter permanently pending.
+    ///
+    /// The recovered guard is used exactly the same way as an un-poisoned guard.
+    /// The sender token — not the mutex health — is the terminal ownership token.
     pub fn try_complete(&self, result: Result<(), BrowserError>) -> bool {
-        match self.sender.lock() {
-            Ok(mut guard) => {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(result);
-                    true
-                } else {
-                    // Already completed by a racing caller.
-                    false
-                }
+        let mut guard = match self.sender.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match guard.take() {
+            Some(tx) => {
+                let _ = tx.send(result);
+                true
             }
-            Err(_poisoned) => {
-                // Mutex is poisoned — the sender has been taken or was never there.
-                // Conservative: treat as already completed; do NOT panic.
-                false
-            }
+            None => false, // Already completed by a racing caller.
         }
     }
 
     /// Returns `true` if the operation has reached a terminal completion state.
     ///
-    /// Acquires the mutex; if poisoned, conservatively returns `true` (terminal).
+    /// Recovers a poisoned mutex guard rather than assuming terminal state.
     pub fn is_completed(&self) -> bool {
-        match self.sender.lock() {
-            Ok(guard) => guard.is_none(),
-            Err(_poisoned) => true,
-        }
+        let guard = match self.sender.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard.is_none()
     }
 }
 
