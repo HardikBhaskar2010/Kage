@@ -385,6 +385,10 @@ impl std::fmt::Display for BrowserSurfaceId {
 ///     (b) `Tab::renderer_epoch` still matches the `recovery_epoch` stored in
 ///         the `Recovering` variant (proving no newer crash cycle superseded this one).
 ///   If either check fails, the callback is silently discarded.
+///   `renderer_epoch` rejects readiness when a newer crash/recovery generation has
+///   superseded the current recovery. It does not identify the renderer instance
+///   associated with an individual `OnRenderViewReady` callback.
+///   True renderer-instance correlation requires a renderer-side handshake.
 ///   KAGE MUST NOT self-transition to `Healthy` on a timer or assumption.
 /// - `Unresponsive` → `Healthy` : CEF reports renderer is responsive again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -397,9 +401,10 @@ pub enum TabHealth {
     },
     Recovering {
         /// Epoch value captured from `Tab::renderer_epoch` when this recovery was initiated.
-        /// The `OnRenderViewReady` handler compares this against the current epoch to
-        /// detect and discard stale callbacks from prior crash cycles.
-        /// CEF does not supply this value — it is host-side recovery-generation tracking only.
+        /// `renderer_epoch` rejects readiness when a newer crash/recovery generation has
+        /// superseded the current recovery. It does not identify the renderer instance
+        /// associated with an individual `OnRenderViewReady` callback.
+        /// True renderer-instance correlation requires a renderer-side handshake.
         recovery_epoch: u64,
     },
 }
@@ -476,9 +481,10 @@ pub struct Tab {
     ///   - tab health is currently `Recovering`, AND
     ///   - the stored `recovery_epoch` == current `renderer_epoch.load()`
     ///
-    /// If either is false, the callback is a stale event from a prior crash cycle
-    /// and must be silently discarded. This prevents incorrect revival of a tab
-    /// that has already entered a subsequent crash-recovery cycle.
+    /// `renderer_epoch` rejects readiness when a newer crash/recovery generation has
+    /// superseded the current recovery. It does not identify the renderer instance
+    /// associated with an individual `OnRenderViewReady` callback.
+    /// True renderer-instance correlation requires a renderer-side handshake.
     pub renderer_epoch: Arc<AtomicU64>,
 }
 

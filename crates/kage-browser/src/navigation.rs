@@ -116,6 +116,31 @@ impl PendingOperation {
         };
         guard.is_none()
     }
+
+    /// Deliberately poisons the internal `sender` mutex for regression and concurrency testing.
+    ///
+    /// Spawns a thread that locks the internal `sender` mutex and panics while holding it.
+    /// Used by regression tests to verify that `try_complete` and `is_completed` properly
+    /// recover via `into_inner()` on the actual `PendingOperation` instance itself.
+    #[doc(hidden)]
+    pub fn poison_for_test(&self) {
+        let _ = std::thread::scope(|s| {
+            s.spawn(|| {
+                let _guard = match self.sender.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                panic!("deliberate panic while holding PendingOperation.sender mutex for testing");
+            })
+            .join()
+        });
+    }
+
+    /// Returns `true` if the internal `sender` mutex is poisoned.
+    #[doc(hidden)]
+    pub fn is_poisoned_for_test(&self) -> bool {
+        self.sender.is_poisoned()
+    }
 }
 
 /// Coordinates navigation actions and callback processing for tabs.
