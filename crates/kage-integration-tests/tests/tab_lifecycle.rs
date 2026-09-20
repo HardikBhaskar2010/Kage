@@ -582,9 +582,72 @@ async fn test_navigation_correlation_table_and_redirect_tracking() {
         final_corr.committed_url.as_deref(),
         Some("https://example.com/login")
     );
-    assert_eq!(
-        final_corr.completed_url.as_deref(),
-        Some("https://example.com/login")
-    );
+    assert_eq!(final_corr.completed_url.as_deref(), Some("https://example.com/login"));
     assert_eq!(final_corr.http_status, Some(200));
+}
+
+#[tokio::test]
+async fn test_event_bus_critical_sequence_and_telemetry_isolation() {
+    let event_bus = BrowserEventBus::with_replay_capacity(16, 10);
+    let tab_id = TabId::new();
+
+    // 1. Emit Critical event (e.g. TabCreated)
+    let e1 = event_bus.emit(
+        BrowserEventProducer::BrowserControl,
+        Some(tab_id),
+        None,
+        None,
+        BrowserEventKind::TabCreated {
+            profile_id: ProfileId::personal(),
+            url: "https://example.com".to_string(),
+        },
+    );
+    assert_eq!(e1.sequence, 1);
+    assert_eq!(e1.critical_sequence, Some(1));
+
+    // 2. Emit Telemetry event (LoadProgress)
+    let e2 = event_bus.emit(
+        BrowserEventProducer::Cef,
+        Some(tab_id),
+        None,
+        None,
+        BrowserEventKind::LoadProgress { progress: 0.5 },
+    );
+    assert_eq!(e2.sequence, 2);
+    assert_eq!(e2.critical_sequence, None);
+
+    // 3. Emit Telemetry event (ConsoleMessage)
+    let e3 = event_bus.emit(
+        BrowserEventProducer::Cef,
+        Some(tab_id),
+        None,
+        None,
+        BrowserEventKind::ConsoleMessage {
+            level: "info".to_string(),
+            message: "rendering started".to_string(),
+        },
+    );
+    assert_eq!(e3.sequence, 3);
+    assert_eq!(e3.critical_sequence, None);
+
+    // 4. Emit second Critical event (TabTitleChanged)
+    let e4 = event_bus.emit(
+        BrowserEventProducer::BrowserControl,
+        Some(tab_id),
+        None,
+        None,
+        BrowserEventKind::TabTitleChanged {
+            title: "Example Title".to_string(),
+        },
+    );
+    assert_eq!(e4.sequence, 4);
+    assert_eq!(e4.critical_sequence, Some(2));
+
+    // Replay critical events from sequence 1: must return only e1 and e4
+    let replayed = event_bus.replay_critical_events(1).unwrap();
+    assert_eq!(replayed.len(), 2);
+    assert_eq!(replayed[0].sequence, 1);
+    assert_eq!(replayed[0].critical_sequence, Some(1));
+    assert_eq!(replayed[1].sequence, 4);
+    assert_eq!(replayed[1].critical_sequence, Some(2));
 }

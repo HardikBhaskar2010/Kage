@@ -614,6 +614,26 @@ impl NavigationController {
             }
         }
 
+        // Validate URL continuity against authoritative active generation and its redirect chain.
+        // A late callback from a superseded navigation A cannot mutate B's state (P3-E2E-03).
+        if let Some(corr) = self.correlations.read().await.get(&tab.id) {
+            if corr.nav_id == target_nav_id {
+                let matches_requested = corr.requested_url == url;
+                let matches_redirect = corr.redirect_chain.iter().any(|r| r == url);
+                let matches_tab_url = tab.url.read().await.as_str() == url;
+                if !matches_requested && !matches_redirect && !matches_tab_url {
+                    warn!(
+                        tab_id = %tab.id,
+                        target_nav_id = %target_nav_id,
+                        callback_url = %url,
+                        expected_url = %corr.requested_url,
+                        "ignoring late on_load_start callback: URL does not match active generation"
+                    );
+                    return;
+                }
+            }
+        }
+
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -696,6 +716,26 @@ impl NavigationController {
             if active_id != target_nav_id {
                 warn!(active_id = %active_id, target_id = %target_nav_id, "ignoring stale on_load_end callback");
                 return;
+            }
+        }
+
+        // Validate URL continuity against authoritative active generation and its redirect chain.
+        // A late callback from a superseded navigation A cannot mutate B's state (P3-E2E-03).
+        if let Some(corr) = self.correlations.read().await.get(&tab.id) {
+            if corr.nav_id == target_nav_id {
+                let matches_requested = corr.requested_url == url;
+                let matches_redirect = corr.redirect_chain.iter().any(|r| r == url);
+                let matches_tab_url = tab.url.read().await.as_str() == url;
+                if !matches_requested && !matches_redirect && !matches_tab_url {
+                    warn!(
+                        tab_id = %tab.id,
+                        target_nav_id = %target_nav_id,
+                        callback_url = %url,
+                        expected_url = %corr.requested_url,
+                        "ignoring late on_load_end callback: URL does not match active generation"
+                    );
+                    return;
+                }
             }
         }
 

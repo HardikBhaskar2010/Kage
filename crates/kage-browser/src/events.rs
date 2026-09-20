@@ -167,8 +167,13 @@ impl BrowserEventKind {
 /// Normalized, sequentially ordered browser event envelope.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserEvent {
-    /// Monotonically increasing sequence number for deterministic ordering.
+    /// Monotonically increasing sequence number for deterministic ordering across all events.
     pub sequence: u64,
+    /// Monotonically increasing critical-only sequence number (`Some(n)` for Critical events; `None` for Telemetry).
+    ///
+    /// Prevents false EventGap detection in critical-only subscribers when telemetry events
+    /// are filtered or non-retained.
+    pub critical_sequence: Option<u64>,
     /// Monotonic clock offset in nanoseconds since process launch.
     pub monotonic_time_ns: u64,
     /// Wall-clock timestamp in milliseconds since UNIX epoch.
@@ -188,6 +193,10 @@ pub struct BrowserEvent {
 }
 
 /// Signal returned when an event subscriber detects a sequence gap that has fallen outside the replay buffer.
+///
+/// Invariant: EventGap applies only when a required retained Critical event is unavailable
+/// (pruned from the ring buffer), not merely because global sequence numbers contain gaps
+/// from intentionally non-retained telemetry.
 /// Triggers the defined recovery contract: read authoritative TabManager state and emit StateSnapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResyncRequired {
@@ -202,6 +211,7 @@ pub struct ResyncRequired {
 pub struct BrowserEventBus {
     sender: broadcast::Sender<BrowserEvent>,
     sequence_counter: Arc<AtomicU64>,
+    critical_sequence_counter: Arc<AtomicU64>,
     start_instant: Instant,
     critical_replay_buffer: Arc<Mutex<VecDeque<BrowserEvent>>>,
     replay_capacity: usize,
@@ -219,6 +229,7 @@ impl BrowserEventBus {
         Self {
             sender,
             sequence_counter: Arc::new(AtomicU64::new(1)),
+            critical_sequence_counter: Arc::new(AtomicU64::new(1)),
             start_instant: Instant::now(),
             critical_replay_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(replay_capacity))),
             replay_capacity,
@@ -236,15 +247,21 @@ impl BrowserEventBus {
         kind: BrowserEventKind,
     ) -> BrowserEvent {
         let sequence = self.sequence_counter.fetch_add(1, Ordering::SeqCst);
+        let class = kind.class();
+        let critical_sequence = if class == EventClass::Critical {
+            Some(self.critical_sequence_counter.fetch_add(1, Ordering::SeqCst))
+        } else {
+            None
+        };
         let monotonic_time_ns = self.start_instant.elapsed().as_nanos() as u64;
         let wall_time_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        let class = kind.class();
 
         let event = BrowserEvent {
             sequence,
+            critical_sequence,
             monotonic_time_ns,
             wall_time_ms,
             producer,
@@ -273,6 +290,11 @@ impl BrowserEventBus {
         }
 
         event
+    }
+
+    /// Read the current critical sequence counter value.
+    pub fn current_critical_sequence(&self) -> u64 {
+        self.critical_sequence_counter.load(Ordering::SeqCst)
     }
 
     /// Subscribe to live browser events.
