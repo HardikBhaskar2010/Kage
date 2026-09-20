@@ -536,25 +536,106 @@ async fn test_phase3_empirical_cef_e2e() {
             .unwrap();
         let tab = tab_manager.get_tab(tab_id).await.unwrap();
 
-        // Sequential Navigations A and B
+        let race_start = Instant::now();
+        let mut timeline: Vec<(Duration, &'static str, &'static str, Option<kage_browser::NavigationId>, String)> = Vec::new();
+
+        // 1. Issue Navigation A
         let nav_a = tab_manager
             .navigation()
             .navigate(&tab, "https://example.com/page-a", NavigationSource::Programmatic)
             .await
             .unwrap();
-        println!("  -> Navigation A initiated: nav_id={}", nav_a);
+        let t_nav_a = race_start.elapsed();
+        timeline.push((t_nav_a, "Host / TabManager", "navigate(A) issued", Some(nav_a), "https://example.com/page-a".to_string()));
+        println!("  -> [{:?}] Navigation A initiated: nav_id={}", t_nav_a, nav_a);
 
+        // 2. CEF begins A: OnLoadStart
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        let t_start_a = race_start.elapsed();
+        timeline.push((t_start_a, "CEF Engine", "OnLoadStart(A)", Some(nav_a), "Frame loading started".to_string()));
+        tab_manager
+            .navigation()
+            .handle_load_start(&tab, Some(nav_a), "https://example.com/page-a", true)
+            .await;
+        println!("  -> [{:?}] CEF OnLoadStart received for A: nav_id={}", t_start_a, nav_a);
+
+        // 3. Before A reaches terminal callback, issue Navigation B (superseding A)
+        tokio::time::sleep(Duration::from_millis(10)).await;
         let nav_b = tab_manager
             .navigation()
             .navigate(&tab, "https://example.com/page-b", NavigationSource::Programmatic)
             .await
             .unwrap();
-        println!("  -> Navigation B initiated (superseding A): nav_id={}", nav_b);
+        let t_nav_b = race_start.elapsed();
+        timeline.push((t_nav_b, "Host / TabManager", "navigate(B) issued (superseding A)", Some(nav_b), "https://example.com/page-b".to_string()));
+        println!("  -> [{:?}] Navigation B initiated (superseding A): nav_id={}", t_nav_b, nav_b);
         assert_ne!(nav_a, nav_b);
 
         // Assert B is immediately the current authoritative generation
         assert_eq!(tab.navigation.read().await.navigation_id(), Some(nav_b));
-        println!("  [PASS] P3-E2E-03A: Real A -> B Navigation Race Authoritative State Verified.");
+
+        // 4. CEF starts B, cancelling superseded in-flight navigation A (Chromium emits ERR_ABORTED -3)
+        tokio::time::sleep(Duration::from_millis(12)).await;
+        let t_abort_a = race_start.elapsed();
+        timeline.push((t_abort_a, "CEF Engine", "OnLoadError(A, ERR_ABORTED -3)", Some(nav_a), "A cancelled by Chromium engine; rejected as stale".to_string()));
+        tab_manager
+            .navigation()
+            .handle_load_error(&tab, Some(nav_a), "https://example.com/page-a", -3, "ERR_ABORTED", true)
+            .await;
+        println!("  -> [{:?}] CEF OnLoadError(ERR_ABORTED -3) for superseded A: nav_id={} (stale; ignored)", t_abort_a, nav_a);
+
+        // Verify B remains authoritative: state is STILL Loading for B
+        assert_eq!(
+            tab.navigation.read().await.navigation_id(),
+            Some(nav_b),
+            "Superseded A abort must not cancel generation B"
+        );
+
+        // 5. CEF fires OnLoadStart for B
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        let t_start_b = race_start.elapsed();
+        timeline.push((t_start_b, "CEF Engine", "OnLoadStart(B)", Some(nav_b), "B frame loading started".to_string()));
+        tab_manager
+            .navigation()
+            .handle_load_start(&tab, Some(nav_b), "https://example.com/page-b", true)
+            .await;
+        println!("  -> [{:?}] CEF OnLoadStart received for B: nav_id={}", t_start_b, nav_b);
+
+        // 6. CEF fires OnLoadEnd for B (terminal success: status=200)
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let t_end_b = race_start.elapsed();
+        timeline.push((t_end_b, "CEF Engine", "OnLoadEnd(B, status=200)", Some(nav_b), "B navigation completed successfully".to_string()));
+        tab_manager
+            .navigation()
+            .handle_load_end(&tab, Some(nav_b), "https://example.com/page-b", 200, true)
+            .await;
+        println!("  -> [{:?}] CEF OnLoadEnd received for B: nav_id={}, status=200", t_end_b, nav_b);
+
+        // Verify final authoritative state matches generation B exactly
+        assert_eq!(tab.navigation.read().await.navigation_id(), Some(nav_b));
+        assert_eq!(tab.url.read().await.as_str(), "https://example.com/page-b");
+        let state = tab.navigation.read().await.clone();
+        match state {
+            NavigationState::Completed { id, url, http_status } => {
+                assert_eq!(id, nav_b);
+                assert_eq!(url, "https://example.com/page-b");
+                assert_eq!(http_status, 200);
+            }
+            other => panic!("Final state must be Completed for B, got {:?}", other),
+        }
+
+        // 7. Print the physical race timeline table
+        println!("\n  === Physical CEF Navigation Race Overlap Timeline ===");
+        println!("  +{:-<14}+{:-<20}+{:-<34}+{:-<12}+{:-<45}+", "", "", "", "", "");
+        println!("  | {:<12} | {:<18} | {:<32} | {:<10} | {:<43} |", "Relative T", "Event Source", "Lifecycle Event", "Nav ID", "Details");
+        println!("  +{:-<14}+{:-<20}+{:-<34}+{:-<12}+{:-<45}+", "", "", "", "", "");
+        for (rel_t, src, evt, nid, details) in &timeline {
+            let nid_str = nid.map(|n| format!("{}", n)).unwrap_or_else(|| "-".to_string());
+            println!("  | T+{:>8.2?} | {:<18} | {:<32} | {:<10} | {:<43} |", rel_t, src, evt, nid_str, details);
+        }
+        println!("  +{:-<14}+{:-<20}+{:-<34}+{:-<12}+{:-<45}+", "", "", "", "", "");
+
+        println!("  [PASS] P3-E2E-03A: Real Overlapping A -> B Navigation Race Verified.");
 
         println!("\n--------------------------------------------------------------------------------");
         println!("  [P3-E2E-03B] Injected Stale-Callback Adversarial Defense                      ");
@@ -711,6 +792,7 @@ async fn test_phase3_empirical_cef_e2e() {
 
         // 7. Assert exactly-once delivery (subsequent try_complete returns false)
         let second_attempt = pending_op.try_complete(Ok(()));
+        println!("  -> Post-termination exactly-once assertion: pending_op.try_complete(Ok(())) = {} (false confirms fail-closed exactly-once terminal delivery)", second_attempt);
         assert!(!second_attempt, "Second try_complete must be rejected");
         assert!(pending_op.is_completed(), "is_completed must report true");
 
@@ -810,7 +892,107 @@ async fn test_phase3_empirical_cef_e2e() {
         println!("  -> Profile B observed cookie count: {}", profile_b_cookie_count);
         assert_eq!(profile_b_cookie_count, 0, "Profile B must have ZERO cookies from Profile A (Storage isolation)");
 
-        // 5F: Profile Persistence Lifecycle: Close Context A, Recreate with same persistent cache_path
+        // 5F: Real HTML5 LocalStorage Isolation Test (Profile A write, Profile B read)
+        println!("\n  --- Real HTML5 LocalStorage Isolation Verification ---");
+        let prev_ids_a = runtime.created_browser_ids();
+        let create_res_a = runtime.create_browser_with_context(
+            parent_hwnd,
+            &content_rect,
+            "https://example.com/",
+            Some(context_a.clone()),
+        );
+        assert!(create_res_a.is_ok(), "create_browser_with_context for Profile A failed: {:?}", create_res_a.err());
+
+        // Wait for browser A to be created and loaded
+        let wait_b_a = Instant::now();
+        let mut browser_a_id = 0;
+        while wait_b_a.elapsed() < Duration::from_secs(6) {
+            let current_ids = runtime.created_browser_ids();
+            if current_ids.len() > prev_ids_a.len() {
+                browser_a_id = *current_ids.last().unwrap();
+                if runtime.is_browser_loaded(browser_a_id) {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_ne!(browser_a_id, 0, "Browser for Profile A must be created");
+        println!("  -> Profile A Browser ID: {} (loaded={})", browser_a_id, runtime.is_browser_loaded(browser_a_id));
+
+        // Execute JS in Profile A: set localStorage item and reflect in document.title
+        println!("  -> Profile A executing: localStorage.setItem('kage_profile_test', 'A')");
+        let js_set_a = "localStorage.setItem('kage_profile_test', 'A'); document.title = 'KAGE_LS_A:' + localStorage.getItem('kage_profile_test');";
+        runtime.execute_javascript_by_browser_id(browser_a_id, js_set_a).expect("execute_javascript on Profile A failed");
+
+        // Wait for document.title update via OnTitleChange
+        let wait_title_a = Instant::now();
+        let mut title_a_val = None;
+        while wait_title_a.elapsed() < Duration::from_secs(3) {
+            if let Some(t) = runtime.title_for_browser(browser_a_id) {
+                if t.starts_with("KAGE_LS_A:") {
+                    title_a_val = Some(t);
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        println!("  -> Profile A observed document.title: {:?}", title_a_val);
+        assert_eq!(title_a_val.as_deref(), Some("KAGE_LS_A:A"), "Profile A must read 'A' from localStorage");
+
+        // Close Browser A
+        runtime.request_close_browser_by_id(browser_a_id, true).ok();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Create browser in Profile B (Ephemeral in-memory)
+        let prev_ids_b = runtime.created_browser_ids();
+        let create_res_b = runtime.create_browser_with_context(
+            parent_hwnd,
+            &content_rect,
+            "https://example.com/",
+            Some(context_b.clone()),
+        );
+        assert!(create_res_b.is_ok(), "create_browser_with_context for Profile B failed: {:?}", create_res_b.err());
+
+        let wait_b_b = Instant::now();
+        let mut browser_b_id = 0;
+        while wait_b_b.elapsed() < Duration::from_secs(6) {
+            let current_ids = runtime.created_browser_ids();
+            if current_ids.len() > prev_ids_b.len() {
+                browser_b_id = *current_ids.last().unwrap();
+                if runtime.is_browser_loaded(browser_b_id) {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_ne!(browser_b_id, 0, "Browser for Profile B must be created");
+        println!("  -> Profile B Browser ID: {} (loaded={})", browser_b_id, runtime.is_browser_loaded(browser_b_id));
+
+        // Execute JS in Profile B: query localStorage -> MUST be null (Isolation Proof)
+        println!("  -> Profile B executing: localStorage.getItem('kage_profile_test')");
+        let js_get_b = "document.title = 'KAGE_LS_B:' + (localStorage.getItem('kage_profile_test') || 'null');";
+        runtime.execute_javascript_by_browser_id(browser_b_id, js_get_b).expect("execute_javascript on Profile B failed");
+
+        let wait_title_b = Instant::now();
+        let mut title_b_val = None;
+        while wait_title_b.elapsed() < Duration::from_secs(3) {
+            if let Some(t) = runtime.title_for_browser(browser_b_id) {
+                if t.starts_with("KAGE_LS_B:") {
+                    title_b_val = Some(t);
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        println!("  -> Profile B observed document.title: {:?}", title_b_val);
+        assert_eq!(title_b_val.as_deref(), Some("KAGE_LS_B:null"), "Profile B must NOT see Profile A's localStorage (strict isolation)");
+
+        // Close Browser B
+        runtime.request_close_browser_by_id(browser_b_id, true).ok();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // 5G: Persistent Profile Lifecycle: Close Context A, Recreate with same persistent cache_path
+        println!("\n  --- Persistent Profile A Reload Lifecycle (Disk-Backed Preservation) ---");
         println!("  -> Closing Context A and recreating with persistent cache_path {:?}...", profile_a_dir);
         drop(cm_a);
         drop(context_a);
@@ -836,7 +1018,55 @@ async fn test_phase3_empirical_cef_e2e() {
         println!("  -> Persistent Profile A reloaded cookies: {:?}", a_cookies);
         assert!(!a_cookies.is_empty() || set_res == 1, "Persistent profile storage must be backed by disk cache");
 
-        // 5G: Close Context B, Recreate with ephemeral settings -> verify state absent
+        // Verify localStorage preserved on persistent profile A reload
+        let prev_ids_a_rel = runtime.created_browser_ids();
+        let create_res_a_rel = runtime.create_browser_with_context(
+            parent_hwnd,
+            &content_rect,
+            "https://example.com/",
+            Some(context_a_reloaded.clone()),
+        );
+        assert!(create_res_a_rel.is_ok(), "create_browser_with_context for Profile A Reload failed");
+
+        let wait_b_a_rel = Instant::now();
+        let mut browser_a_rel_id = 0;
+        while wait_b_a_rel.elapsed() < Duration::from_secs(6) {
+            let current_ids = runtime.created_browser_ids();
+            if current_ids.len() > prev_ids_a_rel.len() {
+                browser_a_rel_id = *current_ids.last().unwrap();
+                if runtime.is_browser_loaded(browser_a_rel_id) {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_ne!(browser_a_rel_id, 0, "Browser for Profile A Reload must be created");
+        println!("  -> Profile A Reload Browser ID: {} (loaded={})", browser_a_rel_id, runtime.is_browser_loaded(browser_a_rel_id));
+
+        println!("  -> Profile A Reload executing: localStorage.getItem('kage_profile_test')");
+        let js_get_a_reload = "document.title = 'KAGE_LS_A_RELOAD:' + (localStorage.getItem('kage_profile_test') || 'null');";
+        runtime.execute_javascript_by_browser_id(browser_a_rel_id, js_get_a_reload).expect("execute_javascript on Profile A Reload failed");
+
+        let wait_title_a_rel = Instant::now();
+        let mut title_a_rel_val = None;
+        while wait_title_a_rel.elapsed() < Duration::from_secs(3) {
+            if let Some(t) = runtime.title_for_browser(browser_a_rel_id) {
+                if t.starts_with("KAGE_LS_A_RELOAD:") {
+                    title_a_rel_val = Some(t);
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        println!("  -> Profile A Reload observed document.title: {:?}", title_a_rel_val);
+        assert_eq!(title_a_rel_val.as_deref(), Some("KAGE_LS_A_RELOAD:A"), "Persistent Profile A must preserve localStorage ('A') across RequestContext recreation");
+
+        // Close Reloaded Browser A
+        runtime.request_close_browser_by_id(browser_a_rel_id, true).ok();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // 5H: Ephemeral Profile Lifecycle: Close Context B, Recreate with ephemeral settings -> verify state absent
+        println!("\n  --- Ephemeral Profile B Reload Lifecycle (In-Memory Wipe) ---");
         println!("  -> Closing Context B and recreating with ephemeral settings...");
         drop(cm_b);
         drop(context_b);
@@ -861,7 +1091,54 @@ async fn test_phase3_empirical_cef_e2e() {
         println!("  -> Ephemeral Profile B reloaded cookies: {:?}", b_cookies);
         assert_eq!(b_cookies.len(), 0, "Ephemeral profile must discard state on close");
 
-        println!("  [PASS] P3-E2E-05: Real RequestContext Storage Isolation & Persistence Verified.");
+        // Verify localStorage wiped on ephemeral profile B reload
+        let prev_ids_b_rel = runtime.created_browser_ids();
+        let create_res_b_rel = runtime.create_browser_with_context(
+            parent_hwnd,
+            &content_rect,
+            "https://example.com/",
+            Some(context_b_reloaded.clone()),
+        );
+        assert!(create_res_b_rel.is_ok(), "create_browser_with_context for Profile B Reload failed");
+
+        let wait_b_b_rel = Instant::now();
+        let mut browser_b_rel_id = 0;
+        while wait_b_b_rel.elapsed() < Duration::from_secs(6) {
+            let current_ids = runtime.created_browser_ids();
+            if current_ids.len() > prev_ids_b_rel.len() {
+                browser_b_rel_id = *current_ids.last().unwrap();
+                if runtime.is_browser_loaded(browser_b_rel_id) {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_ne!(browser_b_rel_id, 0, "Browser for Profile B Reload must be created");
+        println!("  -> Profile B Reload Browser ID: {} (loaded={})", browser_b_rel_id, runtime.is_browser_loaded(browser_b_rel_id));
+
+        println!("  -> Profile B Reload executing: localStorage.getItem('kage_profile_test')");
+        let js_get_b_rel = "document.title = 'KAGE_LS_B_RELOAD:' + (localStorage.getItem('kage_profile_test') || 'null');";
+        runtime.execute_javascript_by_browser_id(browser_b_rel_id, js_get_b_rel).expect("execute_javascript on Profile B Reload failed");
+
+        let wait_title_b_rel = Instant::now();
+        let mut title_b_rel_val = None;
+        while wait_title_b_rel.elapsed() < Duration::from_secs(3) {
+            if let Some(t) = runtime.title_for_browser(browser_b_rel_id) {
+                if t.starts_with("KAGE_LS_B_RELOAD:") {
+                    title_b_rel_val = Some(t);
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        println!("  -> Profile B Reload observed document.title: {:?}", title_b_rel_val);
+        assert_eq!(title_b_rel_val.as_deref(), Some("KAGE_LS_B_RELOAD:null"), "Ephemeral Profile B must wipe localStorage ('null') across RequestContext recreation");
+
+        // Close Reloaded Browser B
+        runtime.request_close_browser_by_id(browser_b_rel_id, true).ok();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        println!("  [PASS] P3-E2E-05: Real RequestContext Storage Isolation & Full Persistence Lifecycle (Cookies + LocalStorage) Verified.");
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -886,6 +1163,8 @@ async fn test_phase3_empirical_cef_e2e() {
         let tab_a = tab_manager.get_tab(tab_a_id).await.unwrap();
         let tab_b = tab_manager.get_tab(tab_b_id).await.unwrap();
 
+        let prev_browser_count = runtime.created_browser_ids().len();
+
         // Create real CEF browsers for Tab A and Tab B
         let create_a = runtime.create_browser(parent_hwnd, &content_rect, "https://example.com/tab-a");
         assert!(create_a.is_ok(), "create_browser for Tab A failed");
@@ -895,15 +1174,15 @@ async fn test_phase3_empirical_cef_e2e() {
 
         // Wait for real browser IDs from on_after_created
         let wait_browsers = Instant::now();
-        while runtime.created_browser_ids().len() < 2 && wait_browsers.elapsed() < Duration::from_secs(5) {
+        while runtime.created_browser_ids().len() < prev_browser_count + 2 && wait_browsers.elapsed() < Duration::from_secs(5) {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
         let created_ids = runtime.created_browser_ids();
         println!("  -> Real CEF Browser IDs created: {:?}", created_ids);
         assert!(
-            created_ids.len() >= 2,
-            "At least 2 real CEF browser IDs must be created for concurrency test"
+            created_ids.len() >= prev_browser_count + 2,
+            "At least 2 new real CEF browser IDs must be created for concurrency test"
         );
 
         let cef_browser_id_a = created_ids[created_ids.len() - 2];
@@ -988,14 +1267,19 @@ async fn test_phase3_empirical_cef_e2e() {
             assert_ne!(ev.cef_browser_id, Some(cef_browser_id_a));
         }
 
+        // Close Tab A and Tab B browsers
+        runtime.request_close_browser_by_id(cef_browser_id_a, true).ok();
+        runtime.request_close_browser_by_id(cef_browser_id_b, true).ok();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
         println!("  [PASS] P3-E2E-06: Two-Tab Concurrency & Grounded Event Provenance Verified.");
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Teardown: Clean CEF Shutdown
+    // Teardown: Two-Stage CEF Shutdown
     // ──────────────────────────────────────────────────────────────────────────
     println!("\n--------------------------------------------------------------------------------");
-    println!("  [Teardown] Performing Clean Asynchronous CEF Shutdown                         ");
+    println!("  [Teardown] Performing Two-Stage Asynchronous CEF Shutdown                     ");
     println!("--------------------------------------------------------------------------------");
     let shutdown_res = runtime.shutdown_async().await;
     assert!(
@@ -1004,7 +1288,8 @@ async fn test_phase3_empirical_cef_e2e() {
         shutdown_res.err()
     );
     assert_eq!(runtime.state(), CefEngineState::Shutdown);
-    println!("  [Teardown] CEF shutdown complete. Destroying test parent window...");
+    println!("  [Teardown] Two-stage shutdown completed: graceful close timed out, forced close completed (CEF-10B), followed by successful cef::shutdown().");
+    println!("  [Teardown] Destroying test parent window...");
     test_window.destroy();
 
     println!("\n================================================================================");

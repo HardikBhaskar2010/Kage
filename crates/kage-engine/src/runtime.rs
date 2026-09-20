@@ -7,6 +7,7 @@
 //! - **CEF-10**: Non-blocking asynchronous shutdown via `OnBeforeClose` tracking.
 
 use crate::errors::EngineError;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -117,6 +118,7 @@ wrap_load_handler! {
         last_error_code: Arc<AtomicI32>,
         last_error_text: Arc<std::sync::RwLock<Option<String>>>,
         last_browser_id_loaded: Arc<AtomicI32>,
+        loaded_browsers: Arc<std::sync::RwLock<HashSet<i32>>>,
     }
 
     impl LoadHandler {
@@ -158,6 +160,9 @@ wrap_load_handler! {
             let b_id = browser.map(|b| b.identifier()).unwrap_or(0);
             self.last_http_status.store(http_status_code as i32, Ordering::SeqCst);
             self.last_browser_id_loaded.store(b_id, Ordering::SeqCst);
+            if let Ok(mut set) = self.loaded_browsers.write() {
+                set.insert(b_id);
+            }
             self.page_loaded.store(true, Ordering::SeqCst);
             if let Some(f) = frame {
                 let url_str = CefStringUtf16::from(&f.url()).to_string();
@@ -285,11 +290,39 @@ wrap_request_handler! {
     }
 }
 
+wrap_display_handler! {
+    struct KageDisplayHandler {
+        last_title: Arc<std::sync::RwLock<Option<String>>>,
+        titles_by_browser: Arc<std::sync::RwLock<HashMap<i32, String>>>,
+    }
+
+    impl DisplayHandler {
+        fn on_title_change(
+            &self,
+            browser: Option<&mut Browser>,
+            title: Option<&CefString>,
+        ) {
+            let b_id = browser.map(|b| b.identifier()).unwrap_or(0);
+            if let Some(t) = title {
+                let title_str = t.to_string();
+                println!("[KageDisplayHandler] on_title_change: browser_id={}, title='{}'", b_id, title_str);
+                if let Ok(mut lock) = self.last_title.write() {
+                    *lock = Some(title_str.clone());
+                }
+                if let Ok(mut map) = self.titles_by_browser.write() {
+                    map.insert(b_id, title_str);
+                }
+            }
+        }
+    }
+}
+
 wrap_client! {
     struct KageBrowserClient {
         life_span_handler: LifeSpanHandler,
         load_handler: LoadHandler,
         request_handler: Option<RequestHandler>,
+        display_handler: Option<DisplayHandler>,
     }
 
     impl Client {
@@ -303,6 +336,10 @@ wrap_client! {
 
         fn request_handler(&self) -> Option<RequestHandler> {
             self.request_handler.clone()
+        }
+
+        fn display_handler(&self) -> Option<DisplayHandler> {
+            self.display_handler.clone()
         }
     }
 }
@@ -367,6 +404,9 @@ pub struct CefRuntime {
     last_user_gesture: Arc<AtomicBool>,
     last_is_redirect: Arc<AtomicBool>,
     last_transition_type: Arc<std::sync::atomic::AtomicU32>,
+    last_title: Arc<std::sync::RwLock<Option<String>>>,
+    titles_by_browser: Arc<std::sync::RwLock<HashMap<i32, String>>>,
+    loaded_browsers: Arc<std::sync::RwLock<HashSet<i32>>>,
     config: RuntimeConfig,
 }
 
@@ -400,6 +440,9 @@ impl CefRuntime {
             last_user_gesture: Arc::new(AtomicBool::new(false)),
             last_is_redirect: Arc::new(AtomicBool::new(false)),
             last_transition_type: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            last_title: Arc::new(std::sync::RwLock::new(None)),
+            titles_by_browser: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            loaded_browsers: Arc::new(std::sync::RwLock::new(HashSet::new())),
             config,
         }
     }
@@ -529,6 +572,97 @@ impl CefRuntime {
     /// Transition type captured from the last on_before_browse.
     pub fn last_transition_type(&self) -> u32 {
         self.last_transition_type.load(Ordering::SeqCst)
+    }
+
+    /// Last observed document title across all browsers via on_title_change.
+    pub fn last_title(&self) -> Option<String> {
+        self.last_title.read().ok().and_then(|g| g.clone())
+    }
+
+    /// Title observed for a specific browser identifier.
+    pub fn title_for_browser(&self, browser_id: i32) -> Option<String> {
+        self.titles_by_browser.read().ok().and_then(|m| m.get(&browser_id).cloned())
+    }
+
+    /// Clear last observed title.
+    pub fn clear_last_title(&self) {
+        if let Ok(mut lock) = self.last_title.write() {
+            *lock = None;
+        }
+    }
+
+    /// Check if a specific browser identifier has completed loading.
+    pub fn is_browser_loaded(&self, browser_id: i32) -> bool {
+        self.loaded_browsers.read().ok().map(|s| s.contains(&browser_id)).unwrap_or(false)
+    }
+
+    /// Execute JavaScript on the main frame of the browser with the given identifier.
+    pub fn execute_javascript_by_browser_id(&self, browser_id: i32, script: &str) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            for host in hosts.iter() {
+                if let Some(browser) = host.browser() {
+                    if browser.identifier() == browser_id {
+                        if let Some(frame) = browser.main_frame() {
+                            let js_code = CefString::from(script);
+                            let script_url = CefString::from("about:blank");
+                            frame.execute_java_script(Some(&js_code), Some(&script_url), 0);
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
+    /// Execute JavaScript on the main frame of the browser host at given index.
+    pub fn execute_javascript(&self, index: usize, script: &str) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(index) {
+                if let Some(browser) = host.browser() {
+                    if let Some(frame) = browser.main_frame() {
+                        let js_code = CefString::from(script);
+                        let script_url = CefString::from("about:blank");
+                        frame.execute_java_script(Some(&js_code), Some(&script_url), 0);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser host found at index {index}")))
+    }
+
+    /// Navigate the browser with given identifier to a URL using frame.load_url.
+    pub fn load_url_by_browser_id(&self, browser_id: i32, url: &str) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            for host in hosts.iter() {
+                if let Some(browser) = host.browser() {
+                    if browser.identifier() == browser_id {
+                        if let Some(frame) = browser.main_frame() {
+                            let url_str = CefString::from(url);
+                            frame.load_url(Some(&url_str));
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
+    /// Close a specific browser instance by its CEF browser identifier.
+    pub fn request_close_browser_by_id(&self, browser_id: i32, force: bool) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            for host in hosts.iter() {
+                if let Some(browser) = host.browser() {
+                    if browser.identifier() == browser_id {
+                        host.close_browser(if force { 1 } else { 0 });
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser host found with identifier {browser_id}")))
     }
 
     /// Validate runtime configuration before passing to CEF (CEF-01, CEF-03b).
@@ -734,6 +868,7 @@ impl CefRuntime {
             self.last_error_code.clone(),
             self.last_error_text.clone(),
             self.last_browser_id_loaded.clone(),
+            self.loaded_browsers.clone(),
         );
         let req_handler = KageRequestHandler::new(
             self.renderer_terminated.clone(),
@@ -747,7 +882,16 @@ impl CefRuntime {
             self.last_is_redirect.clone(),
             self.last_transition_type.clone(),
         );
-        let mut client = KageBrowserClient::new(lifespan, loader, Some(req_handler));
+        let display_handler = KageDisplayHandler::new(
+            self.last_title.clone(),
+            self.titles_by_browser.clone(),
+        );
+        let mut client = KageBrowserClient::new(
+            lifespan,
+            loader,
+            Some(req_handler),
+            Some(display_handler),
+        );
         let url_str = CefString::from(url);
 
         let result = cef::browser_host_create_browser(
