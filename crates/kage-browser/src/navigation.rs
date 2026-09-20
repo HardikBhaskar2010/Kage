@@ -166,6 +166,10 @@ pub struct NavigationCorrelation {
     pub completed_url: Option<String>,
     pub completed_at_ms: Option<u64>,
     pub http_status: Option<i32>,
+    pub source: NavigationSource,
+    pub transition_type: Option<u32>,
+    pub is_redirect: bool,
+    pub user_gesture: Option<bool>,
 }
 
 /// Coordinates navigation actions and callback processing for tabs.
@@ -228,6 +232,7 @@ impl NavigationController {
     /// Record an HTTP redirect URL in the active correlation record.
     pub async fn record_redirect(&self, tab_id: TabId, new_url: &str) {
         if let Some(corr) = self.correlations.write().await.get_mut(&tab_id) {
+            corr.is_redirect = true;
             corr.redirect_chain.push(new_url.to_string());
         }
     }
@@ -241,8 +246,26 @@ impl NavigationController {
         let tab_id = self.browser_to_tab.read().await.get(&cef_browser_id).copied()?;
         let mut corrs = self.correlations.write().await;
         let corr = corrs.get_mut(&tab_id)?;
+        corr.is_redirect = true;
         corr.redirect_chain.push(new_url.to_string());
         Some(corr.nav_id)
+    }
+
+    /// Record auxiliary navigation transition metadata (transition type, user gesture).
+    pub async fn record_navigation_metadata(
+        &self,
+        tab_id: TabId,
+        transition_type: Option<u32>,
+        user_gesture: Option<bool>,
+    ) {
+        if let Some(corr) = self.correlations.write().await.get_mut(&tab_id) {
+            if transition_type.is_some() {
+                corr.transition_type = transition_type;
+            }
+            if user_gesture.is_some() {
+                corr.user_gesture = user_gesture;
+            }
+        }
     }
 
     /// Retrieve the active navigation correlation record for a tab.
@@ -298,6 +321,18 @@ impl NavigationController {
         } else {
             false
         }
+    }
+
+    /// Check if an operation is currently registered in the pending operations registry.
+    pub async fn has_pending_operation(&self, op_id: BrowserOperationId) -> bool {
+        let ops = self.pending_operations.read().await;
+        ops.contains_key(&op_id)
+    }
+
+    /// Retrieve a reference to a registered pending operation.
+    pub async fn get_pending_operation(&self, op_id: BrowserOperationId) -> Option<Arc<PendingOperation>> {
+        let ops = self.pending_operations.read().await;
+        ops.get(&op_id).cloned()
     }
 
     /// Complete operations associated with a specific `NavigationId` via atomic CAS.
@@ -444,6 +479,10 @@ impl NavigationController {
             completed_url: None,
             completed_at_ms: None,
             http_status: None,
+            source,
+            transition_type: None,
+            is_redirect: false,
+            user_gesture: None,
         };
         self.correlations.write().await.insert(tab.id, correlation);
 

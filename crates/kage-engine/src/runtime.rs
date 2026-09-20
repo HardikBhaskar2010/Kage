@@ -76,13 +76,16 @@ wrap_life_span_handler! {
     struct KageLifeSpanHandler {
         active_browsers: Arc<AtomicUsize>,
         browser_hosts: Arc<std::sync::Mutex<Vec<BrowserHost>>>,
+        last_browser_id: Arc<std::sync::atomic::AtomicI32>,
     }
 
     impl LifeSpanHandler {
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             let prev = self.active_browsers.fetch_add(1, Ordering::SeqCst);
-            println!("[KageLifeSpanHandler] on_after_created triggered (prev_count={}, new_count={})", prev, prev + 1);
             if let Some(b) = browser {
+                let id = b.identifier();
+                self.last_browser_id.store(id, Ordering::SeqCst);
+                println!("[KageLifeSpanHandler] on_after_created triggered (browser_id={}, prev_count={}, new_count={})", id, prev, prev + 1);
                 if let Some(host) = b.host() {
                     if let Ok(mut lock) = self.browser_hosts.lock() {
                         lock.push(host);
@@ -100,12 +103,45 @@ wrap_life_span_handler! {
 
 wrap_load_handler! {
     struct KageLoadHandler {
+        is_loading: Arc<AtomicBool>,
+        load_started: Arc<AtomicBool>,
+        load_start_url: Arc<std::sync::RwLock<Option<String>>>,
         page_loaded: Arc<AtomicBool>,
         last_http_status: Arc<std::sync::atomic::AtomicI32>,
         last_loaded_url: Arc<std::sync::RwLock<Option<String>>>,
+        load_failed: Arc<AtomicBool>,
+        last_error_code: Arc<std::sync::atomic::AtomicI32>,
+        last_error_text: Arc<std::sync::RwLock<Option<String>>>,
     }
 
     impl LoadHandler {
+        fn on_loading_state_change(
+            &self,
+            _browser: Option<&mut Browser>,
+            is_loading: ::std::os::raw::c_int,
+            _can_go_back: ::std::os::raw::c_int,
+            _can_go_forward: ::std::os::raw::c_int,
+        ) {
+            println!("[KageLoadHandler] on_loading_state_change: is_loading={}", is_loading);
+            self.is_loading.store(is_loading != 0, Ordering::SeqCst);
+        }
+
+        fn on_load_start(
+            &self,
+            _browser: Option<&mut Browser>,
+            frame: Option<&mut Frame>,
+            _transition_type: TransitionType,
+        ) {
+            self.load_started.store(true, Ordering::SeqCst);
+            if let Some(f) = frame {
+                let url_str = CefStringUtf16::from(&f.url()).to_string();
+                if let Ok(mut lock) = self.load_start_url.write() {
+                    *lock = Some(url_str.clone());
+                }
+                println!("[KageLoadHandler] on_load_start: url={}", url_str);
+            }
+        }
+
         fn on_load_end(
             &self,
             _browser: Option<&mut Browser>,
@@ -125,6 +161,49 @@ wrap_load_handler! {
                 f.execute_java_script(Some(&js_code), Some(&script_url), 0);
             }
         }
+
+        fn on_load_error(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            error_code: Errorcode,
+            error_text: Option<&CefString>,
+            failed_url: Option<&CefString>,
+        ) {
+            let code_i32 = *error_code.as_ref() as i32;
+            self.load_failed.store(true, Ordering::SeqCst);
+            self.last_error_code.store(code_i32, Ordering::SeqCst);
+            let text = error_text.map(|t| t.to_string()).unwrap_or_default();
+            let url = failed_url.map(|u| u.to_string()).unwrap_or_default();
+            if let Ok(mut lock) = self.last_error_text.write() {
+                *lock = Some(text.clone());
+            }
+            println!("[KageLoadHandler] on_load_error: error_code={}, text={}, url={}", code_i32, text, url);
+        }
+    }
+}
+
+wrap_request_handler! {
+    struct KageRequestHandler {
+        renderer_terminated: Arc<AtomicBool>,
+        termination_status: Arc<std::sync::atomic::AtomicI32>,
+        termination_error_code: Arc<std::sync::atomic::AtomicI32>,
+    }
+
+    impl RequestHandler {
+        fn on_render_process_terminated(
+            &self,
+            _browser: Option<&mut Browser>,
+            status: TerminationStatus,
+            error_code: ::std::os::raw::c_int,
+            _error_string: Option<&CefString>,
+        ) {
+            let status_i32 = *status.as_ref() as i32;
+            println!("[KageRequestHandler] on_render_process_terminated: status={:?}, error_code={}", status, error_code);
+            self.termination_status.store(status_i32, Ordering::SeqCst);
+            self.termination_error_code.store(error_code as i32, Ordering::SeqCst);
+            self.renderer_terminated.store(true, Ordering::SeqCst);
+        }
     }
 }
 
@@ -132,6 +211,7 @@ wrap_client! {
     struct KageBrowserClient {
         life_span_handler: LifeSpanHandler,
         load_handler: LoadHandler,
+        request_handler: Option<RequestHandler>,
     }
 
     impl Client {
@@ -141,6 +221,10 @@ wrap_client! {
 
         fn load_handler(&self) -> Option<LoadHandler> {
             Some(self.load_handler.clone())
+        }
+
+        fn request_handler(&self) -> Option<RequestHandler> {
+            self.request_handler.clone()
         }
     }
 }
@@ -183,9 +267,19 @@ pub struct CefRuntime {
     initialized: AtomicBool,
     active_browsers: Arc<AtomicUsize>,
     browser_hosts: Arc<std::sync::Mutex<Vec<BrowserHost>>>,
+    last_browser_id: Arc<std::sync::atomic::AtomicI32>,
+    is_loading: Arc<AtomicBool>,
+    load_started: Arc<AtomicBool>,
+    load_start_url: Arc<std::sync::RwLock<Option<String>>>,
     page_loaded: Arc<AtomicBool>,
     last_http_status: Arc<std::sync::atomic::AtomicI32>,
     last_loaded_url: Arc<std::sync::RwLock<Option<String>>>,
+    load_failed: Arc<AtomicBool>,
+    last_error_code: Arc<std::sync::atomic::AtomicI32>,
+    last_error_text: Arc<std::sync::RwLock<Option<String>>>,
+    renderer_terminated: Arc<AtomicBool>,
+    termination_status: Arc<std::sync::atomic::AtomicI32>,
+    termination_error_code: Arc<std::sync::atomic::AtomicI32>,
     config: RuntimeConfig,
 }
 
@@ -197,9 +291,19 @@ impl CefRuntime {
             initialized: AtomicBool::new(false),
             active_browsers: Arc::new(AtomicUsize::new(0)),
             browser_hosts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            last_browser_id: Arc::new(std::sync::atomic::AtomicI32::new(0)),
+            is_loading: Arc::new(AtomicBool::new(false)),
+            load_started: Arc::new(AtomicBool::new(false)),
+            load_start_url: Arc::new(std::sync::RwLock::new(None)),
             page_loaded: Arc::new(AtomicBool::new(false)),
             last_http_status: Arc::new(std::sync::atomic::AtomicI32::new(0)),
             last_loaded_url: Arc::new(std::sync::RwLock::new(None)),
+            load_failed: Arc::new(AtomicBool::new(false)),
+            last_error_code: Arc::new(std::sync::atomic::AtomicI32::new(0)),
+            last_error_text: Arc::new(std::sync::RwLock::new(None)),
+            renderer_terminated: Arc::new(AtomicBool::new(false)),
+            termination_status: Arc::new(std::sync::atomic::AtomicI32::new(0)),
+            termination_error_code: Arc::new(std::sync::atomic::AtomicI32::new(0)),
             config,
         }
     }
@@ -234,6 +338,56 @@ impl CefRuntime {
     /// Return the active browser count.
     pub fn active_browser_count(&self) -> usize {
         self.active_browsers.load(Ordering::SeqCst)
+    }
+
+    /// Most recently assigned CEF browser ID.
+    pub fn last_browser_id(&self) -> i32 {
+        self.last_browser_id.load(Ordering::SeqCst)
+    }
+
+    /// Whether a load is currently in progress.
+    pub fn is_loading(&self) -> bool {
+        self.is_loading.load(Ordering::SeqCst)
+    }
+
+    /// Whether on_load_start has fired for the current load.
+    pub fn is_load_started(&self) -> bool {
+        self.load_started.load(Ordering::SeqCst)
+    }
+
+    /// Main frame URL observed at on_load_start.
+    pub fn load_start_url(&self) -> Option<String> {
+        self.load_start_url.read().ok().and_then(|g| g.clone())
+    }
+
+    /// Whether on_load_error has fired.
+    pub fn is_load_failed(&self) -> bool {
+        self.load_failed.load(Ordering::SeqCst)
+    }
+
+    /// Last observed error code from on_load_error.
+    pub fn last_error_code(&self) -> i32 {
+        self.last_error_code.load(Ordering::SeqCst)
+    }
+
+    /// Last observed error text from on_load_error.
+    pub fn last_error_text(&self) -> Option<String> {
+        self.last_error_text.read().ok().and_then(|g| g.clone())
+    }
+
+    /// Whether on_render_process_terminated has fired.
+    pub fn is_renderer_terminated(&self) -> bool {
+        self.renderer_terminated.load(Ordering::SeqCst)
+    }
+
+    /// Raw termination status code from on_render_process_terminated.
+    pub fn last_termination_status(&self) -> i32 {
+        self.termination_status.load(Ordering::SeqCst)
+    }
+
+    /// Termination error code from on_render_process_terminated.
+    pub fn termination_error_code(&self) -> i32 {
+        self.termination_error_code.load(Ordering::SeqCst)
     }
 
     /// Validate runtime configuration before passing to CEF (CEF-01, CEF-03b).
@@ -389,15 +543,28 @@ impl CefRuntime {
         content_rect: &crate::composition::ViewportRect,
         url: &str,
     ) -> Result<(), EngineError> {
+        self.create_browser_with_context(parent_hwnd, content_rect, url, None)
+    }
+
+    /// Create a browser in a native child HWND with an optional custom RequestContext (P3-E2E-05).
+    pub fn create_browser_with_context(
+        &self,
+        parent_hwnd: isize,
+        content_rect: &crate::composition::ViewportRect,
+        url: &str,
+        mut request_context: Option<RequestContext>,
+    ) -> Result<(), EngineError> {
         let current = self.state();
-        if current != CefEngineState::BrowserCreationAllowed {
+        if current != CefEngineState::BrowserCreationAllowed && current != CefEngineState::Running {
             return Err(EngineError::Lifecycle(format!(
-                "Cannot create browser: engine state is {:?}, must be BrowserCreationAllowed",
+                "Cannot create browser: engine state is {:?}, must be BrowserCreationAllowed or Running",
                 current
             )));
         }
 
-        self.transition_to(CefEngineState::BrowserCreating)?;
+        if current == CefEngineState::BrowserCreationAllowed {
+            self.transition_to(CefEngineState::BrowserCreating)?;
+        }
 
         let mut window_info = WindowInfo::default();
         let rect = Rect {
@@ -409,13 +576,28 @@ impl CefRuntime {
         window_info = window_info.set_as_child(cef::sys::HWND(parent_hwnd as *mut _), &rect);
 
         let settings = BrowserSettings::default();
-        let lifespan = KageLifeSpanHandler::new(self.active_browsers.clone(), self.browser_hosts.clone());
+        let lifespan = KageLifeSpanHandler::new(
+            self.active_browsers.clone(),
+            self.browser_hosts.clone(),
+            self.last_browser_id.clone(),
+        );
         let loader = KageLoadHandler::new(
+            self.is_loading.clone(),
+            self.load_started.clone(),
+            self.load_start_url.clone(),
             self.page_loaded.clone(),
             self.last_http_status.clone(),
             self.last_loaded_url.clone(),
+            self.load_failed.clone(),
+            self.last_error_code.clone(),
+            self.last_error_text.clone(),
         );
-        let mut client = KageBrowserClient::new(lifespan, loader);
+        let req_handler = KageRequestHandler::new(
+            self.renderer_terminated.clone(),
+            self.termination_status.clone(),
+            self.termination_error_code.clone(),
+        );
+        let mut client = KageBrowserClient::new(lifespan, loader, Some(req_handler));
         let url_str = CefString::from(url);
 
         let result = cef::browser_host_create_browser(
@@ -424,7 +606,7 @@ impl CefRuntime {
             Some(&url_str),
             Some(&settings),
             None,
-            None,
+            request_context.as_mut(),
         );
 
         if result != 1 {
@@ -434,8 +616,10 @@ impl CefRuntime {
             )));
         }
 
-        self.transition_to(CefEngineState::BrowserReady)?;
-        self.transition_to(CefEngineState::Running)?;
+        if current == CefEngineState::BrowserCreationAllowed {
+            self.transition_to(CefEngineState::BrowserReady)?;
+            self.transition_to(CefEngineState::Running)?;
+        }
         Ok(())
     }
 

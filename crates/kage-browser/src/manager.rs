@@ -66,6 +66,9 @@ impl TabManager {
         let tabs = self.list_tabs().await;
         let active_tab = self.get_active_tab().await;
         let sequence = self.event_bus.current_sequence();
+        let latest_global_sequence = sequence;
+        let latest_critical_sequence = self.event_bus.current_critical_sequence();
+        let state_revision = sequence;
         let generated_at_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -73,6 +76,9 @@ impl TabManager {
 
         TabStateSnapshot {
             sequence,
+            latest_global_sequence,
+            latest_critical_sequence,
+            state_revision,
             tabs,
             active_tab,
             generated_at_ms,
@@ -148,6 +154,7 @@ impl TabManager {
             let mut ident = tab.identity.write().await;
             ident.cef_browser_id = Some(cef_browser_id);
         }
+        self.navigation.bind_browser_id(tab_id, cef_browser_id).await;
         info!(
             tab_id = %tab_id,
             cef_browser_id = cef_browser_id,

@@ -54,6 +54,9 @@ pub enum EventClass {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabStateSnapshot {
     pub sequence: u64,
+    pub latest_global_sequence: u64,
+    pub latest_critical_sequence: u64,
+    pub state_revision: u64,
     pub tabs: Vec<TabSummary>,
     pub active_tab: Option<TabId>,
     pub generated_at_ms: u64,
