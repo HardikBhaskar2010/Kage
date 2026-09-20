@@ -11,7 +11,7 @@ description = "End-to-end governance, concurrency, and architecture contract int
 kage-core   = { path = "../kage-core" }
 kage-storage = { path = "../kage-storage" }
 kage-engine  = { path = "../kage-engine" }
-kage-browser = { path = "../kage-browser" }
+kage-browser = { path = "../kage-browser", features = ["test-support"] }
 tokio       = { version = "1", features = ["full"] }
 tokio-util  = { version = "0.7" }
 serde       = { version = "1.0", features = ["derive"] }

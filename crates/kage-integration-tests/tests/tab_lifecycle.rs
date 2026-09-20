@@ -501,3 +501,90 @@ async fn test_browser_event_bus_loss_and_replay_awareness() {
     assert_eq!(snapshot.tabs.len(), 0);
     assert!(snapshot.generated_at_ms > 0);
 }
+
+#[tokio::test]
+async fn test_navigation_correlation_table_and_redirect_tracking() {
+    let temp_dir = TempDir::new().unwrap();
+    let profile_manager = Arc::new(ProfileManager::with_custom_dirs(
+        temp_dir.path().join("profiles"),
+        temp_dir.path().join("temp"),
+    ));
+    let event_bus = BrowserEventBus::new(32);
+    let tab_manager = TabManager::new(profile_manager, event_bus);
+
+    let tab_id = tab_manager
+        .create_tab(ProfileId::personal(), "about:blank")
+        .await
+        .unwrap();
+    let tab = tab_manager.get_tab(tab_id).await.unwrap();
+
+    // Bind real CEF browser ID 42
+    tab_manager.bind_cef_browser(tab_id, 42).await.unwrap();
+
+    // 1. Initiate navigation with known initial URL
+    let nav_id = tab_manager
+        .navigation()
+        .navigate(&tab, "http://example.com/initial", NavigationSource::UserGesture)
+        .await
+        .unwrap();
+
+    // 2. Lookup correlation entry by tab_id and browser_id
+    let corr = tab_manager
+        .navigation()
+        .get_correlation(tab_id)
+        .await
+        .expect("correlation record must exist");
+    assert_eq!(corr.nav_id, nav_id);
+    assert_eq!(corr.cef_browser_id, Some(42));
+    assert_eq!(corr.requested_url, "http://example.com/initial");
+    assert!(corr.redirect_chain.is_empty());
+
+    // 3. CEF GetResourceRequestHandler discovers request ID 10001
+    tab_manager
+        .navigation()
+        .record_cef_request_by_browser(42, 10001, "http://example.com/initial")
+        .await
+        .expect("request registration must succeed");
+
+    // 4. CEF notifies redirect to https://example.com/login
+    tab_manager
+        .navigation()
+        .record_redirect_by_browser(42, "https://example.com/login")
+        .await
+        .expect("redirect registration must succeed");
+
+    // 5. CEF fires OnLoadStart (committed) without passing NavId directly
+    tab_manager
+        .navigation()
+        .handle_load_start(&tab, None, "https://example.com/login", true)
+        .await;
+
+    // 6. CEF fires OnLoadEnd (completed 200 OK) without passing NavId directly
+    tab_manager
+        .navigation()
+        .handle_load_end(&tab, None, "https://example.com/login", 200, true)
+        .await;
+
+    // Verify correlation record has full end-to-end trace:
+    // TabId | NavId | cef_request_id | redirects | committed | completed
+    let final_corr = tab_manager
+        .navigation()
+        .get_correlation_by_browser(42)
+        .await
+        .unwrap();
+    assert_eq!(final_corr.nav_id, nav_id);
+    assert_eq!(final_corr.cef_request_id, Some(10001));
+    assert_eq!(
+        final_corr.redirect_chain,
+        vec!["https://example.com/login".to_string()]
+    );
+    assert_eq!(
+        final_corr.committed_url.as_deref(),
+        Some("https://example.com/login")
+    );
+    assert_eq!(
+        final_corr.completed_url.as_deref(),
+        Some("https://example.com/login")
+    );
+    assert_eq!(final_corr.http_status, Some(200));
+}

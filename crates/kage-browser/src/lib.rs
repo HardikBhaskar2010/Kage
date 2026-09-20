@@ -22,7 +22,9 @@ pub use events::{
     ResyncRequired, TabStateSnapshot,
 };
 pub use manager::TabManager;
-pub use navigation::{BrowserOperationId, NavigationController, PendingOperation};
+pub use navigation::{
+    BrowserOperationId, NavigationController, NavigationCorrelation, PendingOperation,
+};
 pub use profile::{Profile, ProfileKind, ProfileManager};
 pub use tab::{
     BrowserIdentity, BrowserSurfaceId, CdpBinding, CdpSession, CefTerminationStatus,

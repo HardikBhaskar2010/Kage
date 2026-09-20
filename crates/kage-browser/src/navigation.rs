@@ -13,6 +13,7 @@
 //!   acquisition, preventing the poisoned-mutex completion-loss bug that a split `AtomicBool + Mutex`
 //!   would allow (CAS succeeds → lock fails → waiter hung forever).
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -43,20 +44,23 @@ impl std::fmt::Display for BrowserOperationId {
 ///
 /// The terminal state and sender ownership are unified under a **single `Mutex`**.
 /// `sender == Some(_)` means pending; `sender == None` means completed.
-/// Calling `try_complete` atomically takes the sender out of the `Option` inside
-/// the lock — if `take()` returns `Some`, this caller is the unique winner.
-/// If `take()` returns `None`, the operation was already completed by a racing
-/// caller (e.g. a renderer crash racing a navigation timeout).
+/// Taking the sender via `guard.take()` is the atomic completion gate:
 ///
-/// This eliminates the split `AtomicBool + Mutex` pattern where:
-///   CAS(false → true) succeeds → mutex poisoned → sender never delivered →
-///   operation is terminal but its waiter hangs forever.
+/// ```text
+/// Mutex acquisition (recovering poisoned guard if needed)
+///         ↓
+/// guard.take()
+///   ├─ Some(tx) → WINNER: deliver result, return true
+///   └─ None     → LOSER: already completed by racing caller, return false
+/// ```
+///
+/// This eliminates the race where a split `AtomicBool + Mutex` could mark completed
+/// but fail to deliver the result (e.g. if the mutex lock were to panic).
 pub struct PendingOperation {
     pub id: BrowserOperationId,
     pub tab_id: TabId,
     pub nav_id: Option<NavigationId>,
     pub description: String,
-    /// `Some(tx)` = pending; `None` = completed. Guarded by Mutex for exactly-once take.
     sender: Mutex<Option<oneshot::Sender<Result<(), BrowserError>>>>,
 }
 
@@ -77,36 +81,34 @@ impl PendingOperation {
         }
     }
 
-    /// Exactly-once completion gate. Taking the sender IS the atomic completion.
+    /// Complete the operation exactly once.
     ///
-    /// Returns `true` if this invocation was the unique winning resolver.
-    /// Returns `false` if the operation was already completed by a racing caller.
+    /// Returns `true` if this call won the completion race and delivered the result;
+    /// `false` if the operation was already completed by a racing caller.
     ///
-    /// # Mutex poisoning
-    ///
-    /// If the mutex is poisoned the guard is **recovered** via `into_inner()` rather
-    /// than discarding it. Returning `false` on a poisoned lock without inspecting
-    /// the inner value would be wrong: the sender may still be `Some(tx)`, meaning
-    /// the operation is NOT completed — dropping without sending would leave the
-    /// waiter permanently pending.
-    ///
-    /// The recovered guard is used exactly the same way as an un-poisoned guard.
-    /// The sender token — not the mutex health — is the terminal ownership token.
+    /// If the internal mutex was poisoned by a prior thread panic, this method
+    /// recovers the guard via `into_inner()` rather than propagating the panic or
+    /// dropping the sender without notifying the waiter.
     pub fn try_complete(&self, result: Result<(), BrowserError>) -> bool {
         let mut guard = match self.sender.lock() {
             Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
+            Err(poisoned) => {
+                // Mutex is poisoned: recover the guard. The Option<Sender> inside
+                // is still valid and must be drained to uphold INV-11A (fail-closed,
+                // exactly-once notification, never hang the caller).
+                poisoned.into_inner()
+            }
         };
         match guard.take() {
             Some(tx) => {
                 let _ = tx.send(result);
                 true
             }
-            None => false, // Already completed by a racing caller.
+            None => false,
         }
     }
 
-    /// Returns `true` if the operation has reached a terminal completion state.
+    /// Check if the operation is completed without consuming the sender.
     ///
     /// Recovers a poisoned mutex guard rather than assuming terminal state.
     pub fn is_completed(&self) -> bool {
@@ -122,6 +124,7 @@ impl PendingOperation {
     /// Spawns a thread that locks the internal `sender` mutex and panics while holding it.
     /// Used by regression tests to verify that `try_complete` and `is_completed` properly
     /// recover via `into_inner()` on the actual `PendingOperation` instance itself.
+    #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub fn poison_for_test(&self) {
         let _ = std::thread::scope(|s| {
@@ -137,10 +140,32 @@ impl PendingOperation {
     }
 
     /// Returns `true` if the internal `sender` mutex is poisoned.
+    #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub fn is_poisoned_for_test(&self) -> bool {
         self.sender.is_poisoned()
     }
+}
+
+/// Active navigation correlation record.
+///
+/// Implements the host correlation table bridging:
+/// `BrowserId + main-frame identity + active navigation generation (NavigationId) + navigation request metadata (cef_request_id, redirects) ↓ CEF load callbacks (OnLoadStart, OnLoadEnd)`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavigationCorrelation {
+    pub nav_id: NavigationId,
+    pub tab_id: TabId,
+    pub cef_browser_id: Option<i32>,
+    pub cef_request_id: Option<u64>,
+    pub requested_url: String,
+    pub redirect_chain: Vec<String>,
+    pub is_main_frame: bool,
+    pub started_at_ms: u64,
+    pub committed_url: Option<String>,
+    pub committed_at_ms: Option<u64>,
+    pub completed_url: Option<String>,
+    pub completed_at_ms: Option<u64>,
+    pub http_status: Option<i32>,
 }
 
 /// Coordinates navigation actions and callback processing for tabs.
@@ -149,6 +174,8 @@ pub struct NavigationController {
     next_nav_id: AtomicU64,
     next_op_id: AtomicU64,
     pending_operations: RwLock<HashMap<BrowserOperationId, Arc<PendingOperation>>>,
+    correlations: RwLock<HashMap<TabId, NavigationCorrelation>>,
+    browser_to_tab: RwLock<HashMap<i32, TabId>>,
 }
 
 impl NavigationController {
@@ -158,7 +185,75 @@ impl NavigationController {
             next_nav_id: AtomicU64::new(1),
             next_op_id: AtomicU64::new(1),
             pending_operations: RwLock::new(HashMap::new()),
+            correlations: RwLock::new(HashMap::new()),
+            browser_to_tab: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// Associate a CEF browser ID with a TabId for callback lookup.
+    pub async fn bind_browser_id(&self, tab_id: TabId, cef_browser_id: i32) {
+        self.browser_to_tab.write().await.insert(cef_browser_id, tab_id);
+        if let Some(corr) = self.correlations.write().await.get_mut(&tab_id) {
+            corr.cef_browser_id = Some(cef_browser_id);
+        }
+    }
+
+    /// Record a CEF request identifier discovered via GetResourceRequestHandler.
+    pub async fn record_cef_request(&self, tab_id: TabId, cef_request_id: u64, url: &str) {
+        if let Some(corr) = self.correlations.write().await.get_mut(&tab_id) {
+            corr.cef_request_id = Some(cef_request_id);
+            if corr.requested_url != url && !corr.redirect_chain.contains(&url.to_string()) {
+                corr.redirect_chain.push(url.to_string());
+            }
+        }
+    }
+
+    /// Record a CEF request identifier by CEF browser ID.
+    pub async fn record_cef_request_by_browser(
+        &self,
+        cef_browser_id: i32,
+        cef_request_id: u64,
+        url: &str,
+    ) -> Option<NavigationId> {
+        let tab_id = self.browser_to_tab.read().await.get(&cef_browser_id).copied()?;
+        let mut corrs = self.correlations.write().await;
+        let corr = corrs.get_mut(&tab_id)?;
+        corr.cef_request_id = Some(cef_request_id);
+        if corr.requested_url != url && !corr.redirect_chain.contains(&url.to_string()) {
+            corr.redirect_chain.push(url.to_string());
+        }
+        Some(corr.nav_id)
+    }
+
+    /// Record an HTTP redirect URL in the active correlation record.
+    pub async fn record_redirect(&self, tab_id: TabId, new_url: &str) {
+        if let Some(corr) = self.correlations.write().await.get_mut(&tab_id) {
+            corr.redirect_chain.push(new_url.to_string());
+        }
+    }
+
+    /// Record an HTTP redirect URL by CEF browser ID.
+    pub async fn record_redirect_by_browser(
+        &self,
+        cef_browser_id: i32,
+        new_url: &str,
+    ) -> Option<NavigationId> {
+        let tab_id = self.browser_to_tab.read().await.get(&cef_browser_id).copied()?;
+        let mut corrs = self.correlations.write().await;
+        let corr = corrs.get_mut(&tab_id)?;
+        corr.redirect_chain.push(new_url.to_string());
+        Some(corr.nav_id)
+    }
+
+    /// Retrieve the active navigation correlation record for a tab.
+    pub async fn get_correlation(&self, tab_id: TabId) -> Option<NavigationCorrelation> {
+        self.correlations.read().await.get(&tab_id).cloned()
+    }
+
+    /// Retrieve the active navigation correlation record by CEF browser ID.
+    pub async fn get_correlation_by_browser(&self, cef_browser_id: i32) -> Option<NavigationCorrelation> {
+        let tab_id = self.browser_to_tab.read().await.get(&cef_browser_id).copied()?;
+        self.correlations.read().await.get(&tab_id).cloned()
     }
 
     /// Allocate a new monotonic `NavigationId`.
@@ -331,6 +426,27 @@ impl NavigationController {
             (ident.cef_browser_id, cdp.as_ref().map(|c| c.target_id.clone()))
         };
 
+        if let Some(bid) = cef_id {
+            self.browser_to_tab.write().await.insert(bid, tab.id);
+        }
+
+        let correlation = NavigationCorrelation {
+            nav_id,
+            tab_id: tab.id,
+            cef_browser_id: cef_id,
+            cef_request_id,
+            requested_url: url.to_string(),
+            redirect_chain: Vec::new(),
+            is_main_frame: true,
+            started_at_ms,
+            committed_url: None,
+            committed_at_ms: None,
+            completed_url: None,
+            completed_at_ms: None,
+            http_status: None,
+        };
+        self.correlations.write().await.insert(tab.id, correlation);
+
         self.event_bus.emit(
             BrowserEventProducer::NavigationController,
             Some(tab.id),
@@ -414,6 +530,12 @@ impl NavigationController {
         };
         *tab.navigation.write().await = new_state.clone();
 
+        if let Some(corr) = self.correlations.write().await.get_mut(&tab.id) {
+            if corr.nav_id == nav_id {
+                corr.http_status = Some(-1);
+            }
+        }
+
         let (cef_id, cdp_id) = {
             let ident = tab.identity.read().await;
             let cdp = tab.cdp.read().await;
@@ -479,6 +601,9 @@ impl NavigationController {
         let current_state = tab.navigation.read().await.clone();
         let target_nav_id = nav_id
             .or_else(|| current_state.navigation_id())
+            .or_else(|| {
+                self.correlations.try_read().ok()?.get(&tab.id).map(|c| c.nav_id)
+            })
             .unwrap_or_else(|| self.next_navigation_id());
 
         // Validate generation match if tab was already loading
@@ -498,6 +623,13 @@ impl NavigationController {
             if record.navigation_id == target_nav_id {
                 record.committed_url = Some(url.to_string());
                 record.committed_at_ms = Some(now_ms);
+            }
+        }
+
+        if let Some(corr) = self.correlations.write().await.get_mut(&tab.id) {
+            if corr.nav_id == target_nav_id {
+                corr.committed_url = Some(url.to_string());
+                corr.committed_at_ms = Some(now_ms);
             }
         }
 
@@ -555,6 +687,9 @@ impl NavigationController {
         let current_state = tab.navigation.read().await.clone();
         let target_nav_id = nav_id
             .or_else(|| current_state.navigation_id())
+            .or_else(|| {
+                self.correlations.try_read().ok()?.get(&tab.id).map(|c| c.nav_id)
+            })
             .unwrap_or_else(|| self.next_navigation_id());
 
         if let Some(active_id) = current_state.navigation_id() {
@@ -573,6 +708,14 @@ impl NavigationController {
             if record.navigation_id == target_nav_id {
                 record.final_url = Some(url.to_string());
                 record.finished_at_ms = Some(now_ms);
+            }
+        }
+
+        if let Some(corr) = self.correlations.write().await.get_mut(&tab.id) {
+            if corr.nav_id == target_nav_id {
+                corr.completed_url = Some(url.to_string());
+                corr.completed_at_ms = Some(now_ms);
+                corr.http_status = Some(http_status);
             }
         }
 

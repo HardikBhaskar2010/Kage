@@ -186,7 +186,8 @@ pub fn run() {
                             let tm = tab_manager.clone();
                             tauri::async_runtime::block_on(async move {
                                 if let Ok(tab_id) = tm.create_tab(kage_browser::ProfileId::personal(), initial_url).await {
-                                    let _ = tm.attach_surface_hwnd(tab_id, hwnd_isize).await;
+                                    let surface_id = kage_browser::BrowserSurfaceId::new();
+                                    let _ = tm.bind_browser_surface(tab_id, surface_id).await;
                                     tracing::info!("[Tauri setup] Initial tab registered in TabManager: {tab_id}");
                                 }
                             });
