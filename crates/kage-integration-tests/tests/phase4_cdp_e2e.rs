@@ -565,6 +565,8 @@ async fn test_phase4_empirical_cdp_e2e() {
         .await
         .expect("attach to Tab 2");
 
+    println!("  -> Target.attachToTarget real Chromium response:\n     {}", serde_json::to_string(&attach_res_2).unwrap());
+
     let real_session_id_2 = attach_res_2["sessionId"].as_str().unwrap().to_string();
     assert_ne!(real_session_id, real_session_id_2, "Sessions must have unique session IDs");
 
