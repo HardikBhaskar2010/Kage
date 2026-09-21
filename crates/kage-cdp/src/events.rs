@@ -49,6 +49,22 @@ pub enum CdpEvent {
         timestamp: f64,
     },
 
+    /// `Runtime.consoleAPICalled` — console API called in page.
+    #[serde(rename = "Runtime.consoleAPICalled")]
+    RuntimeConsoleApiCalled {
+        #[serde(rename = "type")]
+        console_type: String,
+        #[serde(default)]
+        args: Vec<Value>,
+    },
+
+    /// `Page.frameNavigated` — frame navigated.
+    #[serde(rename = "Page.frameNavigated")]
+    PageFrameNavigated {
+        #[serde(default)]
+        frame: Value,
+    },
+
     /// `Target.targetCreated` — target created.
     #[serde(rename = "Target.targetCreated")]
     TargetCreated {
@@ -122,7 +138,7 @@ pub struct CdpResponseError {
     pub code: i64,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<String>,
+    pub data: Option<Value>,
 }
 
 impl std::fmt::Display for CdpResponseError {

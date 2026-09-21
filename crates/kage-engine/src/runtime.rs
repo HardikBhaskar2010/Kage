@@ -28,6 +28,8 @@ pub struct RuntimeConfig {
     pub multi_threaded_message_loop: bool,
     /// Phase-2 default: persist session cookies across runs (profile-configurable in Phase 3).
     pub persist_session_cookies: bool,
+    /// Loopback port for Chrome DevTools Protocol remote debugging (0 = disabled).
+    pub remote_debugging_port: u16,
 }
 
 impl Default for RuntimeConfig {
@@ -47,6 +49,7 @@ impl Default for RuntimeConfig {
             no_sandbox: cfg!(debug_assertions),
             multi_threaded_message_loop: true,
             persist_session_cookies: true,
+            remote_debugging_port: 0,
         }
     }
 }
@@ -661,6 +664,32 @@ impl CefRuntime {
         Err(EngineError::Lifecycle(format!("No active browser host found with identifier {browser_id}")))
     }
 
+    /// Send a DevTools JSON message directly to a browser instance by ID.
+    pub fn send_dev_tools_message(&self, browser_id: i32, message: &[u8]) -> Result<bool, EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                let res = host.send_dev_tools_message(Some(message));
+                return Ok(res != 0);
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
+    /// Add a DevTools message observer to a browser instance by ID.
+    pub fn add_dev_tools_message_observer(
+        &self,
+        browser_id: i32,
+        observer: &mut DevToolsMessageObserver,
+    ) -> Result<Option<Registration>, EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                let reg = host.add_dev_tools_message_observer(Some(observer));
+                return Ok(reg);
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
     /// Validate runtime configuration before passing to CEF (CEF-01, CEF-03b).
     pub fn validate_config(&self) -> Result<(), EngineError> {
         // Gate CEF-03b: Release configuration must NEVER disable the CEF sandbox
@@ -749,6 +778,7 @@ impl CefRuntime {
                 .map(|p| p.to_string_lossy().as_ref().into())
                 .unwrap_or_default(),
             persist_session_cookies: if self.config.persist_session_cookies { 1 } else { 0 },
+            remote_debugging_port: self.config.remote_debugging_port as i32,
             ..Default::default()
         };
 

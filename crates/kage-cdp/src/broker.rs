@@ -110,6 +110,7 @@ pub struct CdpBroker {
     event_tx: broadcast::Sender<CdpEvent>,
     sessions: Arc<RwLock<HashMap<SessionId, EventSink>>>,
     shutdown: Arc<AtomicBool>,
+    upstream_url: Option<String>,
 }
 
 impl std::fmt::Debug for CdpBroker {
@@ -117,6 +118,7 @@ impl std::fmt::Debug for CdpBroker {
         f.debug_struct("CdpBroker")
             .field("bind_addr", &self.bind_addr)
             .field("session_nonce", &self.session_nonce)
+            .field("upstream_url", &self.upstream_url)
             .finish()
     }
 }
@@ -138,13 +140,14 @@ impl CdpBroker {
             event_tx,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             shutdown: Arc::new(AtomicBool::new(false)),
+            upstream_url: None,
         }
     }
 
     /// Constructs and starts an authenticated CDP loopback broker on an ephemeral loopback port (`127.0.0.1:0`).
     pub async fn bind_ephemeral(session_nonce: &str) -> Result<(Self, SocketAddr), CdpError> {
         let loopback_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
-        Self::bind_with_addr(loopback_addr, session_nonce).await
+        Self::bind_with_upstream(loopback_addr, session_nonce, None).await
     }
 
     /// Constructs and starts an authenticated CDP loopback broker with a newly generated random nonce.
@@ -153,8 +156,27 @@ impl CdpBroker {
         Self::bind_ephemeral(&nonce).await
     }
 
+    /// Constructs and starts an authenticated CDP loopback broker bound to an ephemeral loopback port (`127.0.0.1:0`),
+    /// proxying all commands directly to a live upstream Chromium DevTools WebSocket endpoint.
+    pub async fn bind_ephemeral_with_upstream(
+        session_nonce: &str,
+        upstream_url: String,
+    ) -> Result<(Self, SocketAddr), CdpError> {
+        let loopback_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+        Self::bind_with_upstream(loopback_addr, session_nonce, Some(upstream_url)).await
+    }
+
     /// Explicitly binds with a socket address, strictly enforcing loopback-only safety checks.
     pub async fn bind_with_addr(addr: SocketAddr, session_nonce: &str) -> Result<(Self, SocketAddr), CdpError> {
+        Self::bind_with_upstream(addr, session_nonce, None).await
+    }
+
+    /// Explicitly binds with a socket address and an optional upstream Chromium CDP WebSocket URL.
+    pub async fn bind_with_upstream(
+        addr: SocketAddr,
+        session_nonce: &str,
+        upstream_url: Option<String>,
+    ) -> Result<(Self, SocketAddr), CdpError> {
         if !addr.ip().is_loopback() {
             return Err(CdpError::NonLoopbackBindingForbidden(addr.ip()));
         }
@@ -171,6 +193,7 @@ impl CdpBroker {
             event_tx: event_tx.clone(),
             sessions: sessions.clone(),
             shutdown: shutdown.clone(),
+            upstream_url: upstream_url.clone(),
         };
 
         let active_nonce = session_nonce.to_string();
@@ -184,9 +207,10 @@ impl CdpBroker {
                     Ok((stream, peer_addr)) => {
                         let nonce = active_nonce.clone();
                         let tx = event_tx_clone.clone();
+                        let up_url = upstream_url.clone();
 
                         tokio::spawn(async move {
-                            Self::handle_connection(stream, peer_addr, nonce, tx).await;
+                            Self::handle_connection(stream, peer_addr, nonce, tx, up_url).await;
                         });
                     }
                     Err(_) => {
@@ -267,9 +291,10 @@ impl CdpBroker {
 
     async fn handle_connection(
         stream: TcpStream,
-        _peer_addr: SocketAddr,
+        peer_addr: SocketAddr,
         expected_nonce: String,
         event_tx: broadcast::Sender<CdpEvent>,
+        upstream_url: Option<String>,
     ) {
         // Enforce WebSocket upgrade with Session Nonce validation
         let expected_nonce_clone = expected_nonce.clone();
@@ -298,9 +323,73 @@ impl CdpBroker {
         .await;
 
         let mut ws_stream = match ws_stream_res {
-            Ok(s) => s,
+            Ok(s) => {
+                println!("[CDP BROKER] WS CONNECT {} AUTH OK", peer_addr);
+                s
+            }
             Err(_) => return, // Rejected unauthenticated handshake
         };
+
+        // If upstream URL is configured, bridge bidirectionally to real Chromium CDP
+        if let Some(target_url) = upstream_url {
+            let (upstream_ws, _) = match tokio_tungstenite::connect_async(&target_url).await {
+                Ok(res) => {
+                    println!("[CDP BROKER] Connected to real Chromium upstream CDP at {}", target_url);
+                    res
+                }
+                Err(e) => {
+                    eprintln!("[CDP BROKER] Failed to connect to upstream CDP {}: {}", target_url, e);
+                    return;
+                }
+            };
+
+            let (mut up_write, mut up_read) = upstream_ws.split();
+            let (mut client_write, mut client_read) = ws_stream.split();
+            let event_tx_clone = event_tx.clone();
+
+            // Upstream Chromium -> Client WebSocket + Event Broadcast
+            let up_to_client = tokio::spawn(async move {
+                while let Some(msg) = up_read.next().await {
+                    match msg {
+                        Ok(Message::Text(text)) => {
+                            // Inspect if message is a CDP event (method present, no id)
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if val.get("id").is_none() && val.get("method").is_some() {
+                                    if let Some(method) = val["method"].as_str() {
+                                        println!("[CDP BROKER] Intercepted Chromium event: {}", method);
+                                    }
+                                    if let Ok(evt) = serde_json::from_value::<CdpEvent>(val) {
+                                        let _ = event_tx_clone.send(evt);
+                                    }
+                                }
+                            }
+                            if client_write.send(Message::Text(text)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(Message::Close(_)) | Err(_) => break,
+                        _ => {}
+                    }
+                }
+            });
+
+            // Client WebSocket -> Upstream Chromium
+            while let Some(msg) = client_read.next().await {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        println!("[CDP BROKER] -> Client command: {}", text);
+                        if up_write.send(Message::Text(text)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(Message::Close(_)) | Err(_) => break,
+                    _ => {}
+                }
+            }
+
+            let _ = up_to_client.await;
+            return;
+        }
 
         let mut event_rx = event_tx.subscribe();
 
