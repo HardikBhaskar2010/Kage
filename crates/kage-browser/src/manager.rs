@@ -18,8 +18,8 @@ use crate::events::{
 use crate::navigation::NavigationController;
 use crate::profile::ProfileManager;
 use crate::tab::{
-    BrowserSurfaceId, ProfileId, RendererCrashDiagnostics, Tab, TabHealth, TabId, TabLifecycle,
-    TabSummary,
+    BrowserSurfaceId, CdpBinding, ProfileId, RendererCrashDiagnostics, Tab, TabHealth, TabId,
+    TabLifecycle, TabSummary,
 };
 
 /// Central browser controller managing active and background tabs.
@@ -179,6 +179,38 @@ impl TabManager {
             surface_id = %surface_id,
             "bound surface descriptor to tab"
         );
+        Ok(())
+    }
+
+    /// Bind CDP Target ID to a Tab (CDP association only, does NOT mutate browser identity).
+    pub async fn bind_cdp_target(
+        &self,
+        tab_id: TabId,
+        target_id: impl Into<String>,
+    ) -> Result<(), BrowserError> {
+        let tab = self.get_tab(tab_id).await?;
+        let tid = target_id.into();
+        let binding = CdpBinding::new(tid.clone());
+        *tab.cdp.write().await = Some(binding);
+
+        info!(
+            tab_id = %tab_id,
+            target_id = %tid,
+            "bound CDP target association to tab"
+        );
+
+        let cef_browser_id = tab.identity.read().await.cef_browser_id;
+
+        self.event_bus.emit(
+            BrowserEventProducer::BrowserControl,
+            Some(tab_id),
+            cef_browser_id,
+            Some(tid.clone()),
+            BrowserEventKind::CdpTargetBound {
+                target_id: tid,
+            },
+        );
+
         Ok(())
     }
 

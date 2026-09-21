@@ -154,6 +154,10 @@ pub enum BrowserEventKind {
     LoadProgress {
         progress: f64,
     },
+    /// CDP Target bound to tab (Phase 4 Developer Plane association).
+    CdpTargetBound {
+        target_id: String,
+    },
 }
 
 impl BrowserEventKind {
