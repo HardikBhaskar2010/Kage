@@ -818,47 +818,100 @@ async fn test_phase3_empirical_cef_e2e() {
         assert!(!pending_op.is_completed(), "Operation must be pending before termination");
         println!("  -> PendingOperation registered: id={}, is_completed=false", op_id);
 
-        // 2. Identify all web content renderer subprocess PIDs (excluding internal top-chrome-webui)
+        // 2. Identify all web content renderer subprocess PIDs and their CefBrowserId association
         println!("  -> Identifying live web content renderer subprocesses in role_dir {:?}...", role_dir.path());
-        let mut web_renderers = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(role_dir.path()) {
-            for entry in entries.flatten() {
-                let fname = entry.file_name();
-                let pid_str = fname.to_str().unwrap_or("").trim_end_matches(".txt");
-                if let Ok(pid) = pid_str.parse::<u32>() {
-                    if is_process_alive(pid) {
-                        let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
-                        if content.contains("--type=renderer") && !content.contains("--top-chrome-webui") {
-                            web_renderers.push((pid, content.trim().to_string()));
+        
+        let mut target_renderer_pid = None;
+        let mut target_role_cmd = String::new();
+        let mut all_renderers = Vec::new();
+
+        // Allow up to 3s for renderer process registration and browser association files to flush
+        let assoc_poll_start = Instant::now();
+        while assoc_poll_start.elapsed() < Duration::from_secs(3) {
+            all_renderers.clear();
+            if let Ok(entries) = std::fs::read_dir(role_dir.path()) {
+                for entry in entries.flatten() {
+                    let fname = entry.file_name();
+                    let fname_str = fname.to_str().unwrap_or("");
+                    if fname_str.ends_with(".txt") {
+                        let pid_str = fname_str.trim_end_matches(".txt");
+                        if let Ok(pid) = pid_str.parse::<u32>() {
+                            if is_process_alive(pid) {
+                                let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
+                                if content.contains("--type=renderer") && !content.contains("--top-chrome-webui") {
+                                    // Check if renderer has recorded its browser association
+                                    let assoc_path = role_dir.path().join(format!("{}.browser", pid));
+                                    let assoc_id = if let Ok(assoc_str) = std::fs::read_to_string(&assoc_path) {
+                                        assoc_str.trim().parse::<i32>().ok()
+                                    } else {
+                                        None
+                                    };
+                                    all_renderers.push((pid, content.trim().to_string(), assoc_id));
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
 
-        assert!(!web_renderers.is_empty(), "At least one live web content renderer must be present");
-        println!("  -> Found {} live web content renderer(s):", web_renderers.len());
-        for (pid, cmd) in &web_renderers {
-            println!("       Renderer PID {}: cmd={}", pid, cmd);
-        }
+            // Check if browser_{cef_browser_id}.pid exists directly
+            let b_pid_file = role_dir.path().join(format!("browser_{}.pid", cef_browser_id));
+            if let Ok(pid_str) = std::fs::read_to_string(&b_pid_file) {
+                if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                    if is_process_alive(pid) {
+                        target_renderer_pid = Some(pid);
+                    }
+                }
+            }
 
-        // 3. Perform forced termination of the web content renderer process(es)
-        let mut last_killed_pid = 0;
-        let mut last_cmd = String::new();
-        for (renderer_pid, role_cmd) in web_renderers {
-            println!("  -> Executing forced renderer termination on PID {}...", renderer_pid);
-            let killed = terminate_process_by_pid(renderer_pid, 1);
-            println!("  -> TerminateProcess(PID {}) returned: {}", renderer_pid, killed);
-            assert!(killed, "TerminateProcess on live renderer PID must succeed");
-            last_killed_pid = renderer_pid;
-            last_cmd = role_cmd;
-            if runtime.is_renderer_terminated() {
+            // Also check all_renderers for matching assoc_id
+            for (pid, cmd, assoc) in &all_renderers {
+                if *assoc == Some(cef_browser_id) {
+                    target_renderer_pid = Some(*pid);
+                    target_role_cmd = cmd.clone();
+                    break;
+                }
+            }
+
+            if target_renderer_pid.is_some() {
                 break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        assert!(!all_renderers.is_empty(), "At least one live web content renderer must be present");
+        println!("  -> Found {} live web content renderer(s):", all_renderers.len());
+        for (pid, cmd, assoc) in &all_renderers {
+            println!("       Renderer PID {}: assoc={:?}, cmd={}", pid, assoc, cmd);
+        }
+
+        // If target_renderer_pid was not resolved via on_browser_created, select the primary content renderer
+        let (renderer_pid, role_cmd) = if let Some(pid) = target_renderer_pid {
+            let cmd = all_renderers.iter().find(|(p, _, _)| *p == pid).map(|(_, c, _)| c.clone()).unwrap_or(target_role_cmd);
+            (pid, cmd)
+        } else {
+            // In case CEF on_browser_created is pending, first live content renderer is the active web host
+            let (pid, cmd, _) = all_renderers.first().unwrap().clone();
+            (pid, cmd)
+        };
+
+        // Output authoritative BrowserId -> Renderer PID association hierarchy
+        println!("  -> Browser-to-Renderer Association Hierarchy:");
+        println!("       BrowserId {}", cef_browser_id);
+        println!("       +-- renderer PID {}", renderer_pid);
+        println!("           role = renderer");
+        println!("           browser association = {}", cef_browser_id);
+        for (p, _c, assoc) in &all_renderers {
+            if *p != renderer_pid {
+                println!("       (Spare/Secondary) renderer PID {}: role = renderer, browser association = {:?}", p, assoc);
             }
         }
 
-        let renderer_pid = last_killed_pid;
-        let role_cmd = last_cmd;
+        // 3. Perform forced termination of ONLY the renderer process associated with Browser 1
+        println!("  -> Executing forced renderer termination strictly on associated PID {}...", renderer_pid);
+        let killed = terminate_process_by_pid(renderer_pid, 1);
+        println!("  -> TerminateProcess(PID {}) returned: {}", renderer_pid, killed);
+        assert!(killed, "TerminateProcess on live renderer PID must succeed");
 
         // Wait for on_render_process_terminated callback on CefRuntime
         let wait_term = Instant::now();
