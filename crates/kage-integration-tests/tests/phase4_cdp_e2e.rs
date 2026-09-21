@@ -566,8 +566,27 @@ async fn test_phase4_empirical_cdp_e2e() {
         .expect("attach to Tab 2");
 
     let real_session_id_2 = attach_res_2["sessionId"].as_str().unwrap().to_string();
-    println!("  -> Attached Session 2 ID: {}", real_session_id_2);
     assert_ne!(real_session_id, real_session_id_2, "Sessions must have unique session IDs");
+
+    // Bind Tab 2 identity in TabManager and TargetRouter (INV-10, INV-12)
+    let tab_id_2 = tab_manager
+        .create_tab(ProfileId::personal(), test_url)
+        .await
+        .expect("create tab 2");
+    tab_manager
+        .bind_cef_browser(tab_id_2, browser_id_2)
+        .await
+        .expect("bind cef browser 2");
+    tab_manager
+        .bind_cdp_target(tab_id_2, &real_target_id_2)
+        .await
+        .expect("bind cdp target 2");
+    router.bind_target(tab_id_2.0, &real_target_id_2).await;
+
+    println!("  -> Session 1 Provenance: TargetId={} -> TabId={} -> ProfileId=personal -> CefBrowserId={} -> SessionId={}",
+        real_target_id, tab_id_1, browser_id_1, real_session_id);
+    println!("  -> Session 2 Provenance: TargetId={} -> TabId={} -> ProfileId=personal -> CefBrowserId={} -> SessionId={}",
+        real_target_id_2, tab_id_2, browser_id_2, real_session_id_2);
 
     // Mutate state in Session 1: window.__KAGE_SESSION_MARKER = 'TAB_01_EXCLUSIVE'
     client
