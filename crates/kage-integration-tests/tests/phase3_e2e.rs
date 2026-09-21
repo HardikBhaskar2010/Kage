@@ -210,19 +210,99 @@ fn terminate_process_by_pid(pid: u32, exit_code: u32) -> bool {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn is_process_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle == std::ptr::null_mut() {
+            return false;
+        }
+        let mut exit_code: u32 = 0;
+        let success = GetExitCodeProcess(handle, &mut exit_code) != 0;
+        CloseHandle(handle);
+        success && exit_code == 259 // STILL_ACTIVE
+    }
+}
+
 /// Helper to scan subprocess role diagnostic files written by kage-cef-subprocess
 fn find_subprocess_by_role(role_dir: &std::path::Path, role_type: &str) -> Option<(u32, String)> {
-    let dirs = vec![role_dir.to_path_buf(), std::env::temp_dir().join("kage_subprocess_roles")];
+    let parent_pid = std::process::id();
+    let default_role_dir = std::env::temp_dir().join("kage_subprocess_roles");
+    let dirs = vec![role_dir.to_path_buf(), default_role_dir];
+    let role_arg = format!("--type={}", role_type);
+
+    // Strategy 1: Check Toolhelp32 child processes of the current test runner process
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS,
+        };
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot != INVALID_HANDLE_VALUE {
+                let mut entry = PROCESSENTRY32 {
+                    dwSize: std::mem::size_of::<PROCESSENTRY32>() as u32,
+                    cntUsage: 0,
+                    th32ProcessID: 0,
+                    th32DefaultHeapID: 0,
+                    th32ModuleID: 0,
+                    cntThreads: 0,
+                    th32ParentProcessID: 0,
+                    pcPriClassBase: 0,
+                    dwFlags: 0,
+                    szExeFile: [0; 260],
+                };
+                if Process32First(snapshot, &mut entry) != 0 {
+                    loop {
+                        if entry.th32ParentProcessID == parent_pid {
+                            let child_pid = entry.th32ProcessID;
+                            for dir in &dirs {
+                                let path = dir.join(format!("{}.txt", child_pid));
+                                if let Ok(content) = std::fs::read_to_string(&path) {
+                                    let is_target = if role_type == "renderer" {
+                                        content.contains("--type=renderer") && !content.contains("--top-chrome-webui")
+                                    } else {
+                                        content.contains(&role_arg)
+                                    };
+                                    if is_target && is_process_alive(child_pid) {
+                                        CloseHandle(snapshot);
+                                        return Some((child_pid, content.trim().to_string()));
+                                    }
+                                }
+                            }
+                        }
+                        if Process32Next(snapshot, &mut entry) == 0 {
+                            break;
+                        }
+                    }
+                }
+                CloseHandle(snapshot);
+            }
+        }
+    }
+
+    // Strategy 2: Scan diagnostic directories for live subprocesses matching the role
     for dir in dirs {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("txt") {
                     if let Ok(content) = std::fs::read_to_string(&path) {
-                        let role_arg = format!("--type={}", role_type);
-                        if content.contains(&role_arg) {
+                        let is_target = if role_type == "renderer" {
+                            content.contains("--type=renderer") && !content.contains("--top-chrome-webui")
+                        } else {
+                            content.contains(&role_arg)
+                        };
+                        if is_target {
                             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                                 if let Ok(pid) = stem.parse::<u32>() {
+                                    #[cfg(target_os = "windows")]
+                                    if !is_process_alive(pid) {
+                                        continue;
+                                    }
                                     return Some((pid, content.trim().to_string()));
                                 }
                             }
@@ -251,6 +331,11 @@ async fn test_phase3_empirical_cef_e2e() {
         "CEF subprocess helper must exist at {:?}",
         subprocess_exe
     );
+
+    // Purge stale role diagnostics so only current test subprocesses are registered
+    let default_role_dir = std::env::temp_dir().join("kage_subprocess_roles");
+    let _ = std::fs::remove_dir_all(&default_role_dir);
+    let _ = std::fs::create_dir_all(&default_role_dir);
 
     let temp_root = TempDir::new().expect("Failed to create tempdir for test profiles");
     let cef_cache_root = temp_root.path().join("cef");
@@ -377,17 +462,25 @@ async fn test_phase3_empirical_cef_e2e() {
         println!("       cef_request_id:   {}", req_id);
         println!("       request_url:      {}", req_url);
         println!("       is_navigation:    {}", is_nav);
-        println!("       user_gesture:     {}", user_gesture);
+        println!("       cef_user_gesture: {}", user_gesture);
         println!("       is_redirect:      {}", is_redirect);
         println!("       transition_type:  {}", transition_type);
 
-        // Bind request ID into NavigationCorrelation record
+        // Bind request ID and auxiliary metadata into NavigationCorrelation record
         if req_id != 0 {
             tab_manager
                 .navigation()
                 .record_cef_request(initial_tab_id, req_id, &req_url)
                 .await;
         }
+        tab_manager
+            .navigation()
+            .record_navigation_metadata(
+                initial_tab_id,
+                Some(transition_type),
+                Some(user_gesture),
+            )
+            .await;
 
         let correlation = tab_manager
             .navigation()
@@ -395,12 +488,13 @@ async fn test_phase3_empirical_cef_e2e() {
             .await
             .expect("NavigationCorrelation must exist for active tab");
 
-        println!("  -> NavigationCorrelation Record:");
+        println!("  -> NavigationCorrelation Record (Decoupled Authority & Telemetry Dimensions):");
         println!("       nav_id:            {}", correlation.nav_id);
         println!("       tab_id:            {}", correlation.tab_id);
         println!("       cef_browser_id:    {:?}", correlation.cef_browser_id);
         println!("       cef_request_id:    {:?}", correlation.cef_request_id);
-        println!("       source:            {:?}", correlation.source);
+        println!("       source (KAGE):     {:?} (Initiated via KAGE Host Command API)", correlation.source);
+        println!("       cef_user_gesture:  {:?} (Chromium internal OnBeforeBrowse flag)", correlation.user_gesture);
         println!("       is_redirect:       {}", correlation.is_redirect);
         println!("       requested_url:     {}", correlation.requested_url);
         println!("       completed_url:     {:?}", correlation.completed_url);
@@ -698,6 +792,8 @@ async fn test_phase3_empirical_cef_e2e() {
             .unwrap();
         let tab = tab_manager.get_tab(tab_id).await.unwrap();
 
+        tab_manager.bind_cef_browser(tab_id, cef_browser_id).await.unwrap();
+
         // 1. Register a pending operation
         let (tx, mut rx) = tokio::sync::oneshot::channel::<Result<(), BrowserError>>();
         let op_id = tab_manager
@@ -722,32 +818,47 @@ async fn test_phase3_empirical_cef_e2e() {
         assert!(!pending_op.is_completed(), "Operation must be pending before termination");
         println!("  -> PendingOperation registered: id={}, is_completed=false", op_id);
 
-        // 2. Identify the exact renderer subprocess PID via role diagnostic output
-        let wait_role_start = Instant::now();
-        let mut renderer_info = None;
-        while wait_role_start.elapsed() < Duration::from_secs(5) {
-            if let Some(info) = find_subprocess_by_role(role_dir.path(), "renderer") {
-                renderer_info = Some(info);
-                break;
+        // 2. Identify all web content renderer subprocess PIDs (excluding internal top-chrome-webui)
+        println!("  -> Identifying live web content renderer subprocesses in role_dir {:?}...", role_dir.path());
+        let mut web_renderers = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(role_dir.path()) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name();
+                let pid_str = fname.to_str().unwrap_or("").trim_end_matches(".txt");
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    if is_process_alive(pid) {
+                        let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
+                        if content.contains("--type=renderer") && !content.contains("--top-chrome-webui") {
+                            web_renderers.push((pid, content.trim().to_string()));
+                        }
+                    }
+                }
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        let (renderer_pid, role_cmd) = renderer_info.unwrap_or_else(|| {
-            // If direct role dump file was delayed, read from snapshot
-            let pids = kage_engine::runtime::CefRuntime::new(RuntimeConfig::default());
-            let _ = pids;
-            (std::process::id(), "--type=renderer (verified role fallback)".to_string())
-        });
+        assert!(!web_renderers.is_empty(), "At least one live web content renderer must be present");
+        println!("  -> Found {} live web content renderer(s):", web_renderers.len());
+        for (pid, cmd) in &web_renderers {
+            println!("       Renderer PID {}: cmd={}", pid, cmd);
+        }
 
-        println!("  -> CEF Browser ID: {}", cef_browser_id);
-        println!("  -> Identified Renderer Subprocess PID: {}", renderer_pid);
-        println!("  -> Process Type: renderer (Verified via role signature: '{}')", role_cmd);
+        // 3. Perform forced termination of the web content renderer process(es)
+        let mut last_killed_pid = 0;
+        let mut last_cmd = String::new();
+        for (renderer_pid, role_cmd) in web_renderers {
+            println!("  -> Executing forced renderer termination on PID {}...", renderer_pid);
+            let killed = terminate_process_by_pid(renderer_pid, 1);
+            println!("  -> TerminateProcess(PID {}) returned: {}", renderer_pid, killed);
+            assert!(killed, "TerminateProcess on live renderer PID must succeed");
+            last_killed_pid = renderer_pid;
+            last_cmd = role_cmd;
+            if runtime.is_renderer_terminated() {
+                break;
+            }
+        }
 
-        // 3. Perform forced termination of the renderer process
-        println!("  -> Executing forced renderer termination on PID {}...", renderer_pid);
-        let killed = terminate_process_by_pid(renderer_pid, 1);
-        println!("  -> TerminateProcess returned: {}", killed);
+        let renderer_pid = last_killed_pid;
+        let role_cmd = last_cmd;
 
         // Wait for on_render_process_terminated callback on CefRuntime
         let wait_term = Instant::now();
@@ -755,15 +866,29 @@ async fn test_phase3_empirical_cef_e2e() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
+        assert!(
+            runtime.is_renderer_terminated(),
+            "CEF OnRenderProcessTerminated callback must fire within 6s of renderer termination"
+        );
+
         let raw_status = runtime.last_termination_status();
         let term_browser_id = runtime.last_terminated_browser_id();
-        println!("  -> Raw CEF OnRenderProcessTerminated status: {} (browser_id={})", raw_status, term_browser_id);
+
+        assert_eq!(term_browser_id, cef_browser_id, "Terminated browser ID must match Browser 1 ID");
+        assert_eq!(raw_status, 1, "Raw CEF termination status for TerminateProcess must be TS_PROCESS_WAS_KILLED (1)");
+
+        let cef_status = CefTerminationStatus::from_raw(raw_status);
+        assert_eq!(cef_status, CefTerminationStatus::ProcessWasKilled);
+        let mapped_status = RendererTerminationStatus::from(cef_status);
+        assert_eq!(mapped_status, RendererTerminationStatus::Killed);
+
+        println!("  -> OnRenderProcessTerminated: browser_id = {} raw_status = {} mapped_status = {:?}", term_browser_id, raw_status, mapped_status);
 
         // 4. Dispatch verified renderer termination diagnostics to TabManager
         let diagnostics = RendererCrashDiagnostics {
             observed_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
-            termination_status: RendererTerminationStatus::Killed,
-            raw_cef_status: CefTerminationStatus::ProcessWasKilled,
+            termination_status: mapped_status,
+            raw_cef_status: cef_status,
         };
 
         tab_manager

@@ -76,7 +76,7 @@ use cef::*;
 wrap_life_span_handler! {
     struct KageLifeSpanHandler {
         active_browsers: Arc<AtomicUsize>,
-        browser_hosts: Arc<std::sync::Mutex<Vec<BrowserHost>>>,
+        browser_hosts: Arc<std::sync::Mutex<HashMap<i32, BrowserHost>>>,
         last_browser_id: Arc<AtomicI32>,
         created_browser_ids: Arc<std::sync::Mutex<Vec<i32>>>,
     }
@@ -93,15 +93,19 @@ wrap_life_span_handler! {
                 println!("[KageLifeSpanHandler] on_after_created triggered (browser_id={}, prev_count={}, new_count={})", id, prev, prev + 1);
                 if let Some(host) = b.host() {
                     if let Ok(mut lock) = self.browser_hosts.lock() {
-                        lock.push(host);
+                        lock.insert(id, host);
                     }
                 }
             }
         }
 
-        fn on_before_close(&self, _browser: Option<&mut Browser>) {
+        fn on_before_close(&self, browser: Option<&mut Browser>) {
             let prev = self.active_browsers.fetch_sub(1, Ordering::SeqCst);
-            println!("[KageLifeSpanHandler] on_before_close triggered (prev_count={}, new_count={})", prev, prev - 1);
+            let b_id = browser.map(|b| b.identifier()).unwrap_or(0);
+            if let Ok(mut lock) = self.browser_hosts.lock() {
+                lock.remove(&b_id);
+            }
+            println!("[KageLifeSpanHandler] on_before_close triggered (browser_id={}, prev_count={}, new_count={})", b_id, prev, prev - 1);
         }
     }
 }
@@ -381,7 +385,7 @@ pub struct CefRuntime {
     state: std::sync::RwLock<CefEngineState>,
     initialized: AtomicBool,
     active_browsers: Arc<AtomicUsize>,
-    browser_hosts: Arc<std::sync::Mutex<Vec<BrowserHost>>>,
+    browser_hosts: Arc<std::sync::Mutex<HashMap<i32, BrowserHost>>>,
     last_browser_id: Arc<std::sync::atomic::AtomicI32>,
     created_browser_ids: Arc<std::sync::Mutex<Vec<i32>>>,
     is_loading: Arc<AtomicBool>,
@@ -417,7 +421,7 @@ impl CefRuntime {
             state: std::sync::RwLock::new(CefEngineState::Created),
             initialized: AtomicBool::new(false),
             active_browsers: Arc::new(AtomicUsize::new(0)),
-            browser_hosts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            browser_hosts: Arc::new(std::sync::Mutex::new(HashMap::new())),
             last_browser_id: Arc::new(std::sync::atomic::AtomicI32::new(0)),
             created_browser_ids: Arc::new(std::sync::Mutex::new(Vec::new())),
             is_loading: Arc::new(AtomicBool::new(false)),
@@ -599,15 +603,13 @@ impl CefRuntime {
     /// Execute JavaScript on the main frame of the browser with the given identifier.
     pub fn execute_javascript_by_browser_id(&self, browser_id: i32, script: &str) -> Result<(), EngineError> {
         if let Ok(hosts) = self.browser_hosts.lock() {
-            for host in hosts.iter() {
+            if let Some(host) = hosts.get(&browser_id) {
                 if let Some(browser) = host.browser() {
-                    if browser.identifier() == browser_id {
-                        if let Some(frame) = browser.main_frame() {
-                            let js_code = CefString::from(script);
-                            let script_url = CefString::from("about:blank");
-                            frame.execute_java_script(Some(&js_code), Some(&script_url), 0);
-                            return Ok(());
-                        }
+                    if let Some(frame) = browser.main_frame() {
+                        let js_code = CefString::from(script);
+                        let script_url = CefString::from("about:blank");
+                        frame.execute_java_script(Some(&js_code), Some(&script_url), 0);
+                        return Ok(());
                     }
                 }
             }
@@ -618,7 +620,7 @@ impl CefRuntime {
     /// Execute JavaScript on the main frame of the browser host at given index.
     pub fn execute_javascript(&self, index: usize, script: &str) -> Result<(), EngineError> {
         if let Ok(hosts) = self.browser_hosts.lock() {
-            if let Some(host) = hosts.get(index) {
+            if let Some((_, host)) = hosts.iter().nth(index) {
                 if let Some(browser) = host.browser() {
                     if let Some(frame) = browser.main_frame() {
                         let js_code = CefString::from(script);
@@ -635,14 +637,12 @@ impl CefRuntime {
     /// Navigate the browser with given identifier to a URL using frame.load_url.
     pub fn load_url_by_browser_id(&self, browser_id: i32, url: &str) -> Result<(), EngineError> {
         if let Ok(hosts) = self.browser_hosts.lock() {
-            for host in hosts.iter() {
+            if let Some(host) = hosts.get(&browser_id) {
                 if let Some(browser) = host.browser() {
-                    if browser.identifier() == browser_id {
-                        if let Some(frame) = browser.main_frame() {
-                            let url_str = CefString::from(url);
-                            frame.load_url(Some(&url_str));
-                            return Ok(());
-                        }
+                    if let Some(frame) = browser.main_frame() {
+                        let url_str = CefString::from(url);
+                        frame.load_url(Some(&url_str));
+                        return Ok(());
                     }
                 }
             }
@@ -653,13 +653,9 @@ impl CefRuntime {
     /// Close a specific browser instance by its CEF browser identifier.
     pub fn request_close_browser_by_id(&self, browser_id: i32, force: bool) -> Result<(), EngineError> {
         if let Ok(hosts) = self.browser_hosts.lock() {
-            for host in hosts.iter() {
-                if let Some(browser) = host.browser() {
-                    if browser.identifier() == browser_id {
-                        host.close_browser(if force { 1 } else { 0 });
-                        return Ok(());
-                    }
-                }
+            if let Some(host) = hosts.get(&browser_id) {
+                host.close_browser(if force { 1 } else { 0 });
+                return Ok(());
             }
         }
         Err(EngineError::Lifecycle(format!("No active browser host found with identifier {browser_id}")))
@@ -803,7 +799,7 @@ impl CefRuntime {
     /// - `force = true`: Forced immediate termination (CEF-10B).
     pub fn request_close_browser(&self, index: usize, force: bool) -> Result<(), EngineError> {
         if let Ok(hosts) = self.browser_hosts.lock() {
-            if let Some(host) = hosts.get(index) {
+            if let Some((_, host)) = hosts.iter().nth(index) {
                 host.close_browser(if force { 1 } else { 0 });
                 return Ok(());
             }
@@ -930,9 +926,9 @@ impl CefRuntime {
         // Stage 1 (CEF-10A): Graceful close
         {
             if let Ok(hosts) = self.browser_hosts.lock() {
-                println!("[shutdown_async] Requesting graceful close (force=0) on {} browser host(s)...", hosts.len());
-                for (i, host) in hosts.iter().enumerate() {
-                    println!("[shutdown_async] Requesting close_browser(0) on host #{}...", i);
+                println!("[shutdown_async] Requesting graceful close (force=0) on {} active browser host(s)...", hosts.len());
+                for (&b_id, host) in hosts.iter() {
+                    println!("[shutdown_async] Requesting close_browser(0) on host for browser_id={}...", b_id);
                     host.close_browser(0);
                 }
             }
@@ -947,8 +943,8 @@ impl CefRuntime {
             if !escalated_to_force && tokio::time::Instant::now() > grace_deadline {
                 println!("[shutdown_async] Graceful close window exceeded 3s; escalating to force close (force=1, CEF-10B)...");
                 if let Ok(hosts) = self.browser_hosts.lock() {
-                    for (i, host) in hosts.iter().enumerate() {
-                        println!("[shutdown_async] Requesting close_browser(1) on host #{}...", i);
+                    for (&b_id, host) in hosts.iter() {
+                        println!("[shutdown_async] Requesting close_browser(1) on host for browser_id={}...", b_id);
                         host.close_browser(1);
                     }
                 }

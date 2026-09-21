@@ -293,6 +293,23 @@ pub enum CefTerminationStatus {
     Unknown(u32),
 }
 
+impl CefTerminationStatus {
+    /// Convert raw CEF `TerminationStatus` integer discriminant into `CefTerminationStatus`.
+    /// 0 = TS_ABNORMAL_TERMINATION, 1 = TS_PROCESS_WAS_KILLED, 2 = TS_PROCESS_CRASHED,
+    /// 3 = TS_PROCESS_OOM, 4 = TS_LAUNCH_FAILED, 5 = TS_INTEGRITY_FAILURE.
+    pub fn from_raw(raw: i32) -> Self {
+        match raw {
+            0 => CefTerminationStatus::AbnormalTermination,
+            1 => CefTerminationStatus::ProcessWasKilled,
+            2 => CefTerminationStatus::ProcessCrashed,
+            3 => CefTerminationStatus::ProcessOom,
+            4 => CefTerminationStatus::LaunchFailed,
+            5 => CefTerminationStatus::IntegrityFailure,
+            other => CefTerminationStatus::Unknown(other as u32),
+        }
+    }
+}
+
 /// Disaggregated renderer termination status.
 ///
 /// - `Crashed`:          Process crashed (e.g. segfault, unhandled exception).
