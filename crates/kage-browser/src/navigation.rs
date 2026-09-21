@@ -25,7 +25,7 @@ use crate::errors::BrowserError;
 use crate::events::{BrowserEventBus, BrowserEventKind, BrowserEventProducer};
 use crate::tab::{
     NavigationCancelCause, NavigationId, NavigationRecord, NavigationSource, NavigationState, Tab,
-    TabId,
+    TabHealth, TabId,
 };
 
 /// Unique identifier for an asynchronous inflight browser operation.
@@ -362,7 +362,11 @@ impl NavigationController {
     }
 
     /// Fail closed all pending operations for a tab via atomic CAS (INV-11A).
-    pub async fn drain_operations_for_tab(&self, tab_id: TabId, reason: &str) {
+    pub async fn drain_operations_for_tab(
+        &self,
+        tab_id: TabId,
+        make_error: impl Fn() -> BrowserError,
+    ) {
         let matching_ops: Vec<Arc<PendingOperation>> = {
             let mut ops = self.pending_operations.write().await;
             let ids: Vec<BrowserOperationId> = ops
@@ -375,10 +379,7 @@ impl NavigationController {
         };
 
         for op in matching_ops {
-            op.try_complete(Err(BrowserError::RendererCrashed(
-                tab_id,
-                reason.to_string(),
-            )));
+            op.try_complete(Err(make_error()));
         }
     }
 
@@ -401,11 +402,11 @@ impl NavigationController {
         cef_request_id: Option<u64>,
     ) -> Result<NavigationId, BrowserError> {
         let health = tab.health.read().await.clone();
-        if health.is_crashed() {
-            return Err(BrowserError::RendererCrashed(
-                tab.id,
-                "cannot navigate a tab with a terminated renderer".to_string(),
-            ));
+        if let TabHealth::RendererTerminated { status, .. } = health {
+            return Err(BrowserError::RendererTerminated {
+                tab_id: tab.id,
+                status,
+            });
         }
 
         // Cancel any currently loading navigation as superseded

@@ -1,7 +1,7 @@
 //! Error definitions for KAGE browser control plane.
 
+use crate::tab::{RendererTerminationStatus, TabId};
 use thiserror::Error;
-use crate::tab::TabId;
 
 #[derive(Debug, Error)]
 pub enum BrowserError {
@@ -23,8 +23,11 @@ pub enum BrowserError {
     #[error("action cancelled: {0}")]
     ActionCancelled(String),
 
-    #[error("renderer process crashed for tab '{0}': {1}")]
-    RendererCrashed(TabId, String),
+    #[error("renderer process terminated for tab '{tab_id}': {status:?}")]
+    RendererTerminated {
+        tab_id: TabId,
+        status: RendererTerminationStatus,
+    },
 
     #[error("invalid state: {0}")]
     InvalidState(String),

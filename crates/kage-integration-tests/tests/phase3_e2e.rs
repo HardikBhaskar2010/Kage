@@ -961,12 +961,14 @@ async fn test_phase3_empirical_cef_e2e() {
 
         // 6. Assert PendingOperation was drained with fail-closed terminal error (INV-11A)
         let op_result = rx.try_recv().expect("Pending operation must have received terminal result");
-        assert!(
-            op_result.is_err(),
-            "Operation must fail-closed on termination, got {:?}",
-            op_result
-        );
-        println!("  -> PendingOperation successfully received error: {:?}", op_result.err());
+        match &op_result {
+            Err(BrowserError::RendererTerminated { tab_id: failed_tab_id, status: term_status }) => {
+                assert_eq!(*failed_tab_id, tab_id);
+                assert_eq!(*term_status, RendererTerminationStatus::Killed);
+            }
+            other => panic!("Operation must fail-closed with RendererTerminated(Killed), got {:?}", other),
+        }
+        println!("  -> PendingOperation successfully received error: {:?}", op_result.as_ref().err());
 
         // 7. Assert exactly-once delivery (subsequent try_complete returns false)
         let second_attempt = pending_op.try_complete(Ok(()));
@@ -1466,7 +1468,7 @@ async fn test_phase3_empirical_cef_e2e() {
         shutdown_res.err()
     );
     assert_eq!(runtime.state(), CefEngineState::Shutdown);
-    println!("  [Teardown] Two-stage shutdown completed: graceful close timed out, forced close completed (CEF-10B), followed by successful cef::shutdown().");
+    println!("  [Teardown] Graceful two-stage shutdown completed; the active browser closed during the graceful phase and cef::shutdown() completed successfully.");
     println!("  [Teardown] Destroying test parent window...");
     test_window.destroy();
 

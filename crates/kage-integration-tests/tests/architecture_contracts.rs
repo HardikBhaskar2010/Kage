@@ -629,7 +629,7 @@ async fn contract_gate_inv_11_failure_cannot_grant_authority() {
     // Mutation must fail closed
     let nav_result = manager.navigation().navigate(&tab, "https://another.com", NavigationSource::Programmatic).await;
     assert!(
-        matches!(nav_result, Err(BrowserError::RendererCrashed(..))),
+        matches!(nav_result, Err(BrowserError::RendererTerminated { .. })),
         "INV-11A: Mutating action on crashed tab must fail closed"
     );
 }

@@ -401,8 +401,8 @@ async fn test_renderer_crash_fails_closed_inv_11a() {
     // Invariant 11A: Pending operation fails closed exactly once via CAS
     let op_res = rx_op.await.expect("Sender must deliver terminal result");
     assert!(
-        matches!(op_res, Err(BrowserError::RendererCrashed(..))),
-        "Pending operation must fail closed with RendererCrashed"
+        matches!(op_res, Err(BrowserError::RendererTerminated { status: RendererTerminationStatus::Crashed, .. })),
+        "Pending operation must fail closed with RendererTerminated(Crashed)"
     );
 
     // Attempting late completion on op_id returns false (atomic CAS prevents double-resolve)
@@ -417,10 +417,11 @@ async fn test_renderer_crash_fails_closed_inv_11a() {
         .navigate(&tab, "https://another-page.com", NavigationSource::Programmatic)
         .await;
     match nav_res {
-        Err(BrowserError::RendererCrashed(failed_tab_id, _)) => {
+        Err(BrowserError::RendererTerminated { tab_id: failed_tab_id, status }) => {
             assert_eq!(failed_tab_id, tab_id);
+            assert_eq!(status, RendererTerminationStatus::Crashed);
         }
-        other => panic!("Expected RendererCrashed error, got: {:?}", other),
+        other => panic!("Expected RendererTerminated error, got: {:?}", other),
     }
 
     // Verify RendererProcessTerminated event was emitted with producer Cef

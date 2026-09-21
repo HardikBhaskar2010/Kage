@@ -193,7 +193,7 @@ impl TabManager {
 
         // Drain any pending operations for this tab via atomic CAS
         self.navigation
-            .drain_operations_for_tab(tab_id, "tab closed")
+            .drain_operations_for_tab(tab_id, || BrowserError::ActionCancelled("tab closed".to_string()))
             .await;
 
         // If closed tab was active, switch to next available tab
@@ -315,8 +315,12 @@ impl TabManager {
         *tab.health.write().await = new_health.clone();
 
         // Drain and fail-closed all inflight operations for this tab via atomic CAS
+        let term_status = diagnostics.termination_status;
         self.navigation
-            .drain_operations_for_tab(tab_id, "renderer process terminated (INV-11A)")
+            .drain_operations_for_tab(tab_id, move || BrowserError::RendererTerminated {
+                tab_id,
+                status: term_status,
+            })
             .await;
 
         let (cef_id, cdp_id) = {
