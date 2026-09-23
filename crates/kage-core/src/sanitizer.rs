@@ -35,7 +35,7 @@ fn secret_patterns() -> &'static [SecretPattern] {
             },
             // Generic API key
             SecretPattern {
-                regex: Regex::new(r"(?i)((?:api[_-]?key|api[_-]?secret|secret[_-]?key)\s*[=:]\s*)\S+").unwrap(),
+                regex: Regex::new(r#"((?i)(?:api[_-]?key|api[_-]?secret|secret[_-]?key)\s*[=:]\s*)[^\s'",;]+"#).unwrap(),
                 replacement: "${1}[REDACTED]",
             },
             // AWS access key IDs
@@ -45,7 +45,7 @@ fn secret_patterns() -> &'static [SecretPattern] {
             },
             // AWS secret access keys
             SecretPattern {
-                regex: Regex::new(r"(?i)(aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*)\S+").unwrap(),
+                regex: Regex::new(r#"((?i)aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*)[^\s'",;]+"#).unwrap(),
                 replacement: "${1}[REDACTED]",
             },
             // GitHub personal access tokens
@@ -65,13 +65,13 @@ fn secret_patterns() -> &'static [SecretPattern] {
             },
             // Cookie header values
             SecretPattern {
-                regex: Regex::new(r"(?i)(cookie\s*:\s*)\S+").unwrap(),
+                regex: Regex::new(r#"((?i)cookie\s*:\s*)[^\s'",;]+"#).unwrap(),
                 replacement: "${1}[REDACTED]",
             },
             // Password field values: preserve "password=" or "\"password\":"
             SecretPattern {
-                regex: Regex::new(r#"(?i)("?password"?\s*[=:]\s*"?)\S+?("?)(?:$|\s|['";,])"#).unwrap(),
-                replacement: "${1}[REDACTED]${2}",
+                regex: Regex::new(r#"((?i)"?password"?\s*[=:]\s*"?)[^\s'",;)]+"#).unwrap(),
+                replacement: "${1}[REDACTED]",
             },
             // Credit card numbers (16 digits with dashes or spaces)
             SecretPattern {
@@ -197,5 +197,16 @@ mod tests {
         let output = sanitizer.sanitize(input.clone());
         assert_eq!(output["url"], "https://example.com");
         assert_eq!(output["status"], 200);
+    }
+
+    #[test]
+    fn redacts_sensitive_log_without_eating_quotes() {
+        let sanitizer = SecretSanitizer::new();
+        let input = "console.error('Request failed with Bearer secret_live_token_7721 and password=hunter2');";
+        let output = sanitizer.sanitize_string(input);
+        assert_eq!(
+            output,
+            "console.error('Request failed with Bearer [REDACTED] and password=[REDACTED]');"
+        );
     }
 }

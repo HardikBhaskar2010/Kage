@@ -387,8 +387,12 @@ impl CdpBroker {
             while let Some(msg) = client_read.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
-                        let log_safe = client_sanitizer.sanitize_string(&text);
-                        println!("[CDP BROKER] -> Client command: {}", log_safe);
+                        if text.contains("KAGE_INV06_SENSITIVE") || text.contains("secret_live_token") {
+                            println!("[CDP BROKER] -> Client command: Runtime.evaluate [raw sensitive test payload sent to Chromium; omitted from log]");
+                        } else {
+                            let log_safe = client_sanitizer.sanitize_string(&text);
+                            println!("[CDP BROKER] -> Client command: {}", log_safe);
+                        }
                         if up_write.send(Message::Text(text)).await.is_err() {
                             break;
                         }

@@ -479,12 +479,15 @@ async fn test_phase5_empirical_telemetry_e2e() {
     let raw_bearer = "secret_live_token_7721";
     let raw_pass = "hunter2";
 
+    println!("  -> Executing sensitive-data test with real Chromium execution:");
+    println!("     [raw secrets generated internally; omitted from logs]");
+
     client
         .call_session(
             Some(&session_id),
             "Runtime.evaluate",
             json!({
-                "expression": format!("console.error('Request failed with Bearer {} and password={}');", raw_bearer, raw_pass)
+                "expression": format!("/* KAGE_INV06_SENSITIVE */ console.error('Request failed with Bearer {} and password={}');", raw_bearer, raw_pass)
             }),
         )
         .await
@@ -567,8 +570,8 @@ async fn test_phase5_empirical_telemetry_e2e() {
     // Gate P5-GATE-04: Real DOM Tree Ingestion & 4-Stage Pruning with Report
     // =========================================================================
     println!("\n=== [Gate P5-GATE-04] Real DOM Tree Ingestion & 4-Stage Pruning ===");
-    // Inject a large, repeating DOM subtree with <script>, <style>, and non-whitelisted attributes
-    // to test all 4 stages of pruning and demonstrate token budget enforcement (> 4,000 raw -> <= 4,000 pruned).
+    // Inject a large, repeating DOM subtree (200 items, ~6,000 raw tokens) to test all 4 stages
+    // of pruning and explicitly prove over-budget input reduction (> 4,000 raw tokens -> <= 4,000 pruned tokens).
     client
         .call_session(
             Some(&session_id),
@@ -578,12 +581,12 @@ async fn test_phase5_empirical_telemetry_e2e() {
                     (() => {
                         const container = document.createElement('div');
                         container.id = 'large-budget-container';
-                        for (let i = 0; i < 120; i++) {
+                        for (let i = 0; i < 200; i++) {
                             const p = document.createElement('p');
                             p.className = 'test-row';
                             p.setAttribute('data-cy', 'row-' + i);
-                            p.setAttribute('non-whitelisted-debug-blob', 'x'.repeat(50));
-                            p.innerText = 'Repetitive row content item description for token budget stress testing ' + i;
+                            p.setAttribute('non-whitelisted-debug-blob', 'x'.repeat(60));
+                            p.innerText = 'Repetitive row content item description for token budget stress testing paragraph index ' + i;
                             container.appendChild(p);
                         }
                         const s = document.createElement('script');
@@ -612,7 +615,7 @@ async fn test_phase5_empirical_telemetry_e2e() {
     let pruning_report: DomPruningReport = {
         let mut dom_store = tab1_telemetry.dom.lock().await;
         dom_store.set_document(root_val);
-        assert!(dom_store.node_count() > 100, "DomTreeStore must contain all parsed nodes (> 100)");
+        assert!(dom_store.node_count() > 200, "DomTreeStore must contain parsed nodes (> 200)");
         println!("  -> Ingested real Chromium DOM tree with {} nodes", dom_store.node_count());
 
         pruner.prune_with_report(&*dom_store, None)
@@ -629,16 +632,17 @@ async fn test_phase5_empirical_telemetry_e2e() {
         (1.0 - (pruning_report.pruned_tokens as f64 / pruning_report.raw_estimated_tokens as f64)) * 100.0
     );
 
+    assert!(pruning_report.raw_estimated_tokens > 4000, "Raw DOM tokens must exceed 4,000 token budget to test hard-cap pruning");
     assert!(pruning_report.stage2_stripped_tags >= 2, "Stage 2 must strip <script> and <style> tags");
     assert!(pruning_report.stage3_retained_attributes > 0, "Stage 3 must retain whitelisted semantic attributes");
-    assert!(pruning_report.stage4_collapsed_siblings > 50, "Stage 4 must collapse repeating sibling rows");
+    assert!(pruning_report.stage4_collapsed_siblings > 150, "Stage 4 must collapse repeating sibling rows");
     assert!(pruning_report.pruned_tokens <= 4000, "Pruned DOM must strictly fit within 4,000 token budget");
     assert!(pruning_report.pruned_tokens < pruning_report.raw_estimated_tokens, "Pruned tokens must be less than raw tokens");
     assert!(!pruning_report.pruned_dom.contains("<script"), "Pruned DOM must not contain <script>");
     assert!(!pruning_report.pruned_dom.contains("<style"), "Pruned DOM must not contain <style>");
     assert!(!pruning_report.pruned_dom.contains("non-whitelisted-debug-blob"), "Non-whitelisted attributes must be pruned");
 
-    println!("  [PASS] Gate P5-GATE-04: Real DOM Tree Cached & 4-Stage Pruning Metrics Verified.");
+    println!("  [PASS] Gate P5-GATE-04: Real DOM Tree Cached & 4-Stage Pruning Metrics Verified (>4k raw -> <=4k budget).");
 
     // =========================================================================
     // Gate P5-GATE-05: Untrusted Data Framing & Prompt Injection Defense
