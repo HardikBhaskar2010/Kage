@@ -9,6 +9,7 @@
 //! - Stage 4: Repetition Collapsing (> 2 repeating sibling items collapsed)
 
 use std::collections::HashSet;
+use serde::{Deserialize, Serialize};
 use crate::telemetry::DomTreeStore;
 
 /// Configuration options for the DOM pruner.
@@ -58,6 +59,26 @@ impl Default for DomPrunerConfig {
     }
 }
 
+/// Stage-by-stage pruning metrics and verifiable report for audit gates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomPruningReport {
+    pub raw_node_count: usize,
+    pub stage1_focused_node: Option<i64>,
+    pub stage2_stripped_tags: usize,
+    pub stage3_retained_attributes: usize,
+    pub stage4_collapsed_siblings: usize,
+    pub raw_estimated_tokens: usize,
+    pub pruned_tokens: usize,
+    pub pruned_dom: String,
+}
+
+#[derive(Default)]
+struct PruningStats {
+    stage2_stripped: usize,
+    stage3_attrs: usize,
+    stage4_collapsed: usize,
+}
+
 /// 4-Stage DOM Pruner.
 pub struct DomPruner {
     config: DomPrunerConfig,
@@ -74,14 +95,45 @@ impl DomPruner {
 
     /// Prune the given DOM tree into a concise XML/HTML representation.
     pub fn prune(&self, store: &DomTreeStore, focus_node_id: Option<i64>) -> String {
+        self.prune_with_report(store, focus_node_id).pruned_dom
+    }
+
+    /// Prune the given DOM tree and return full stage-by-stage audit metrics.
+    pub fn prune_with_report(&self, store: &DomTreeStore, focus_node_id: Option<i64>) -> DomPruningReport {
         let root_id = match store.root_id() {
             Some(id) => id,
-            None => return "<empty_dom />".to_string(),
+            None => {
+                return DomPruningReport {
+                    raw_node_count: 0,
+                    stage1_focused_node: focus_node_id,
+                    stage2_stripped_tags: 0,
+                    stage3_retained_attributes: 0,
+                    stage4_collapsed_siblings: 0,
+                    raw_estimated_tokens: 0,
+                    pruned_tokens: 0,
+                    pruned_dom: "<empty_dom />".to_string(),
+                };
+            }
         };
 
+        let mut stats = PruningStats::default();
         let mut output = String::new();
-        self.render_node(store, root_id, 0, focus_node_id, &mut output);
-        output
+        self.render_node(store, root_id, 0, focus_node_id, &mut output, &mut stats);
+
+        let raw_node_count = store.node_count();
+        let raw_estimated_tokens = raw_node_count * 15;
+        let pruned_tokens = crate::budget::TokenBudget::estimate_tokens(&output);
+
+        DomPruningReport {
+            raw_node_count,
+            stage1_focused_node: focus_node_id,
+            stage2_stripped_tags: stats.stage2_stripped,
+            stage3_retained_attributes: stats.stage3_attrs,
+            stage4_collapsed_siblings: stats.stage4_collapsed,
+            raw_estimated_tokens,
+            pruned_tokens,
+            pruned_dom: output,
+        }
     }
 
     fn render_node(
@@ -91,6 +143,7 @@ impl DomPruner {
         depth: usize,
         focus_node_id: Option<i64>,
         out: &mut String,
+        stats: &mut PruningStats,
     ) {
         if depth > self.config.max_depth {
             out.push_str("<!-- [max depth exceeded] -->\n");
@@ -104,15 +157,17 @@ impl DomPruner {
 
         let tag = node.local_name.to_lowercase();
 
-        // Stage 2: Structural Stripping
+        // Stage 2: Structural Stripping (<script>, <style>, <noscript>, <iframe>)
         if self.config.strip_scripts_and_styles {
             if tag == "script" || tag == "style" || tag == "noscript" || tag == "iframe" {
+                stats.stage2_stripped += 1;
                 return;
             }
         }
 
-        // SVG path replacement
+        // SVG path replacement (Stage 2)
         if tag == "svg" {
+            stats.stage2_stripped += 1;
             let id_str = node
                 .attributes
                 .get("id")
@@ -132,6 +187,7 @@ impl DomPruner {
             let text = node.node_value.trim();
             if !text.is_empty() {
                 let clean_text: std::borrow::Cow<'_, str> = if text.starts_with("data:image/") {
+                    stats.stage2_stripped += 1;
                     std::borrow::Cow::Borrowed("[base64_image]")
                 } else if text.len() > 256 {
                     std::borrow::Cow::Owned(format!("{}... [truncated]", &text[..256]))
@@ -146,7 +202,7 @@ impl DomPruner {
         // Element node (node_type == 1) or Document (node_type == 9)
         if node.node_type == 9 {
             for &child_id in &node.children {
-                self.render_node(store, child_id, depth, focus_node_id, out);
+                self.render_node(store, child_id, depth, focus_node_id, out, stats);
             }
             return;
         }
@@ -155,6 +211,7 @@ impl DomPruner {
             return;
         }
 
+        // Stage 1: Active Element Focus
         let is_focused = focus_node_id == Some(node_id);
         let indent = "  ".repeat(depth);
 
@@ -166,7 +223,9 @@ impl DomPruner {
 
         for (k, v) in &node.attributes {
             if self.config.allowed_attributes.contains(k) || k.starts_with("aria-") || k.starts_with("data-") {
+                stats.stage3_attrs += 1;
                 let val: std::borrow::Cow<'_, str> = if v.starts_with("data:image/") {
+                    stats.stage2_stripped += 1;
                     std::borrow::Cow::Borrowed("[base64_image]")
                 } else if v.len() > 120 {
                     std::borrow::Cow::Owned(format!("{}...", &v[..120]))
@@ -177,7 +236,6 @@ impl DomPruner {
             }
         }
 
-        // Check children for Stage 4 Repetition Collapsing
         if node.children.is_empty() {
             out.push_str(&format!("{indent}<{tag}{attrs_str} />\n"));
             return;
@@ -186,7 +244,7 @@ impl DomPruner {
         out.push_str(&format!("{indent}<{tag}{attrs_str}>\n"));
 
         // Stage 4: Repetition Collapsing of immediate children
-        self.render_children_with_repetition_collapsing(store, &node.children, depth + 1, focus_node_id, out);
+        self.render_children_with_repetition_collapsing(store, &node.children, depth + 1, focus_node_id, out, stats);
 
         out.push_str(&format!("{indent}</{tag}>\n"));
     }
@@ -199,6 +257,7 @@ impl DomPruner {
         depth: usize,
         focus_node_id: Option<i64>,
         out: &mut String,
+        stats: &mut PruningStats,
     ) {
         let mut i = 0;
         let indent = "  ".repeat(depth);
@@ -210,7 +269,6 @@ impl DomPruner {
                 .map(|n| n.local_name.to_lowercase())
                 .unwrap_or_default();
 
-            // Count contiguous siblings with identical tag
             let mut run_len = 1;
             while i + run_len < children.len() {
                 let next_tag = store
@@ -227,13 +285,14 @@ impl DomPruner {
             if run_len > self.config.repetition_threshold && (tag == "tr" || tag == "li" || tag == "option" || tag == "p") {
                 // Render first few up to threshold
                 for k in 0..self.config.repetition_threshold {
-                    self.render_node(store, children[i + k], depth, focus_node_id, out);
+                    self.render_node(store, children[i + k], depth, focus_node_id, out, stats);
                 }
                 let omitted = run_len - self.config.repetition_threshold;
+                stats.stage4_collapsed += omitted;
                 out.push_str(&format!("{indent}<!-- [... {omitted} similar <{tag}> items collapsed ...] -->\n"));
                 i += run_len;
             } else {
-                self.render_node(store, child_id, depth, focus_node_id, out);
+                self.render_node(store, child_id, depth, focus_node_id, out, stats);
                 i += 1;
             }
         }
@@ -285,14 +344,13 @@ mod tests {
 
         store.set_document(&doc);
         let pruner = DomPruner::default_pruner();
-        let pruned = pruner.prune(&store, None);
+        let report = pruner.prune_with_report(&store, None);
 
-        // Scripts stripped
-        assert!(!pruned.contains("script"));
-        assert!(!pruned.contains("console.log"));
-        // SVG simplified to icon placeholder
-        assert!(pruned.contains("<svg id=\"icon-1\" class=\"feather\" [icon]/>"));
-        assert!(!pruned.contains("M10 20..."));
+        assert!(report.stage2_stripped_tags >= 2);
+        assert!(!report.pruned_dom.contains("script"));
+        assert!(!report.pruned_dom.contains("console.log"));
+        assert!(report.pruned_dom.contains("<svg id=\"icon-1\" class=\"feather\" [icon]/>"));
+        assert!(!report.pruned_dom.contains("M10 20..."));
     }
 
     #[test]
@@ -328,11 +386,12 @@ mod tests {
 
         store.set_document(&doc);
         let pruner = DomPruner::default_pruner();
-        let pruned = pruner.prune(&store, None);
+        let report = pruner.prune_with_report(&store, None);
 
-        assert!(pruned.contains("Item 10"));
-        assert!(pruned.contains("Item 11"));
-        assert!(!pruned.contains("Item 25"));
-        assert!(pruned.contains("<!-- [... 19 similar <li> items collapsed ...] -->"));
+        assert_eq!(report.stage4_collapsed_siblings, 19);
+        assert!(report.pruned_dom.contains("Item 10"));
+        assert!(report.pruned_dom.contains("Item 11"));
+        assert!(!report.pruned_dom.contains("Item 25"));
+        assert!(report.pruned_dom.contains("<!-- [... 19 similar <li> items collapsed ...] -->"));
     }
 }

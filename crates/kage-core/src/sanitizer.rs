@@ -17,35 +17,68 @@ use std::sync::OnceLock;
 // ---------------------------------------------------------------------------
 
 /// Compiled regexes for known secret patterns.  Extend this list for new
+struct SecretPattern {
+    regex: Regex,
+    replacement: &'static str,
+}
+
+/// Compiled regexes for known secret patterns.  Extend this list for new
 /// credential formats; patterns are applied to every string leaf in the JSON tree.
-fn secret_patterns() -> &'static [Regex] {
-    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
+fn secret_patterns() -> &'static [SecretPattern] {
+    static PATTERNS: OnceLock<Vec<SecretPattern>> = OnceLock::new();
     PATTERNS.get_or_init(|| {
-        let raw = [
-            // Bearer / OAuth tokens
-            r"(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*",
-            // Generic API key (key = ..., api_key=..., apikey=...)
-            r"(?i)(?:api[_-]?key|api[_-]?secret|secret[_-]?key)\s*[=:]\s*\S+",
+        vec![
+            // Bearer / OAuth tokens: preserve "Bearer " label
+            SecretPattern {
+                regex: Regex::new(r"(?i)(bearer\s+)[A-Za-z0-9\-._~+/]+=*").unwrap(),
+                replacement: "${1}[REDACTED]",
+            },
+            // Generic API key
+            SecretPattern {
+                regex: Regex::new(r"(?i)((?:api[_-]?key|api[_-]?secret|secret[_-]?key)\s*[=:]\s*)\S+").unwrap(),
+                replacement: "${1}[REDACTED]",
+            },
             // AWS access key IDs
-            r"AKIA[0-9A-Z]{16}",
+            SecretPattern {
+                regex: Regex::new(r"AKIA[0-9A-Z]{16}").unwrap(),
+                replacement: "[REDACTED]",
+            },
             // AWS secret access keys
-            r"(?i)aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*\S+",
+            SecretPattern {
+                regex: Regex::new(r"(?i)(aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*)\S+").unwrap(),
+                replacement: "${1}[REDACTED]",
+            },
             // GitHub personal access tokens
-            r"gh[pousr]_[A-Za-z0-9]{36,}",
+            SecretPattern {
+                regex: Regex::new(r"gh[pousr]_[A-Za-z0-9]{36,}").unwrap(),
+                replacement: "[REDACTED]",
+            },
             // JWTs (three base64-url segments)
-            r"eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+",
+            SecretPattern {
+                regex: Regex::new(r"eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+").unwrap(),
+                replacement: "[REDACTED]",
+            },
             // Hex-encoded 32-byte secrets (common for session keys)
-            r"\b[0-9a-fA-F]{64}\b",
+            SecretPattern {
+                regex: Regex::new(r"\b[0-9a-fA-F]{64}\b").unwrap(),
+                replacement: "[REDACTED]",
+            },
             // Cookie header values
-            r"(?i)cookie\s*:\s*\S+",
-            // Password field values
-            r#"(?i)"?password"?\s*[=:]\s*"?\S+"?"#,
+            SecretPattern {
+                regex: Regex::new(r"(?i)(cookie\s*:\s*)\S+").unwrap(),
+                replacement: "${1}[REDACTED]",
+            },
+            // Password field values: preserve "password=" or "\"password\":"
+            SecretPattern {
+                regex: Regex::new(r#"(?i)("?password"?\s*[=:]\s*"?)\S+?("?)(?:$|\s|['";,])"#).unwrap(),
+                replacement: "${1}[REDACTED]${2}",
+            },
             // Credit card numbers (16 digits with dashes or spaces)
-            r"\b(?:\d{4}[-\s]?){3}\d{4}\b",
-        ];
-        raw.iter()
-            .map(|p| Regex::new(p).expect("static secret pattern must be valid"))
-            .collect()
+            SecretPattern {
+                regex: Regex::new(r"\b(?:\d{4}[-\s]?){3}\d{4}\b").unwrap(),
+                replacement: "[REDACTED]",
+            },
+        ]
     })
 }
 
@@ -66,7 +99,7 @@ impl SecretSanitizer {
     pub fn sanitize_string(&self, s: &str) -> String {
         let mut result = s.to_string();
         for pattern in secret_patterns() {
-            result = pattern.replace_all(&result, "[REDACTED]").into_owned();
+            result = pattern.regex.replace_all(&result, pattern.replacement).into_owned();
         }
         result
     }
@@ -103,7 +136,7 @@ impl SecretSanitizer {
     fn is_secret_key(&self, key: &str) -> bool {
         let lower = key.to_lowercase();
         [
-            "password", "passwd", "secret", "api_key", "apikey", "access_token",
+            "token", "password", "passwd", "secret", "api_key", "apikey", "access_token",
             "refresh_token", "auth_token", "bearer", "private_key", "cookie",
             "session_id", "session_token", "csrf_token", "credit_card", "card_number",
             "cvv", "cvc", "ssn", "authorization", "auth_header",

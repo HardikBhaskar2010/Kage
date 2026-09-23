@@ -47,6 +47,15 @@ impl ConsoleLogLevel {
             _ => ConsoleLogLevel::Info,
         }
     }
+
+    pub fn as_ref_str(&self) -> &'static str {
+        match self {
+            ConsoleLogLevel::Error => "ERROR",
+            ConsoleLogLevel::Warning => "WARN",
+            ConsoleLogLevel::Info => "INFO",
+            ConsoleLogLevel::Verbose => "DEBUG",
+        }
+    }
 }
 
 /// A sanitized console log entry with recurring deduplication count.

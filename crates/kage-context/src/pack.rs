@@ -281,16 +281,6 @@ impl ConsoleEntry {
     }
 }
 
-impl crate::telemetry::ConsoleLogLevel {
-    pub fn as_ref_str(&self) -> &str {
-        match self {
-            crate::telemetry::ConsoleLogLevel::Error => "ERROR",
-            crate::telemetry::ConsoleLogLevel::Warning => "WARN",
-            crate::telemetry::ConsoleLogLevel::Info => "INFO",
-            crate::telemetry::ConsoleLogLevel::Verbose => "DEBUG",
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

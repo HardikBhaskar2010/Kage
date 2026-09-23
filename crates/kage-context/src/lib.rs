@@ -22,7 +22,7 @@ pub use pack::{
     BrowserObservation, ContextPack, ContextPackAssembler, ContextPackError, ContextSection,
     ContextSignals, BUDGET_DEFAULT, BUDGET_ERROR_DIAGNOSIS, BUDGET_FULL_PAGE, BUDGET_MICRO_INSPECT,
 };
-pub use pruner::{DomPruner, DomPrunerConfig};
+pub use pruner::{DomPruner, DomPrunerConfig, DomPruningReport};
 pub use scrubber::{ContextScrubber, UNTRUSTED_CLOSE_TAG, UNTRUSTED_OPEN_TAG};
 pub use telemetry::{
     ConsoleEntry, ConsoleLogLevel, ConsoleRingBuffer, DomNode, DomTreeStore, NetworkEntry,

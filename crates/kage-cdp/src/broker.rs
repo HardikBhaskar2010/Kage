@@ -347,24 +347,33 @@ impl CdpBroker {
             let (mut client_write, mut client_read) = ws_stream.split();
             let event_tx_clone = event_tx.clone();
 
-            // Upstream Chromium -> Client WebSocket + Event Broadcast
+            // Upstream Chromium -> Client WebSocket + Event Broadcast (INV-06 Sanitized Gateway)
             let up_to_client = tokio::spawn(async move {
+                let sanitizer = kage_core::SecretSanitizer::new();
                 while let Some(msg) = up_read.next().await {
                     match msg {
                         Ok(Message::Text(text)) => {
-                            // Inspect if message is a CDP event (method present, no id)
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                                if val.get("id").is_none() && val.get("method").is_some() {
-                                    if let Some(method) = val["method"].as_str() {
+                                // INV-06: Sanitize all Chromium messages before any downstream delivery
+                                let sanitized_val = sanitizer.sanitize(val);
+                                let sanitized_text = serde_json::to_string(&sanitized_val).unwrap_or(text);
+
+                                if sanitized_val.get("id").is_none() && sanitized_val.get("method").is_some() {
+                                    if let Some(method) = sanitized_val["method"].as_str() {
                                         println!("[CDP BROKER] Intercepted Chromium event: {}", method);
                                     }
-                                    if let Ok(evt) = serde_json::from_value::<CdpEvent>(val) {
+                                    if let Ok(evt) = serde_json::from_value::<CdpEvent>(sanitized_val) {
                                         let _ = event_tx_clone.send(evt);
                                     }
                                 }
-                            }
-                            if client_write.send(Message::Text(text)).await.is_err() {
-                                break;
+                                if client_write.send(Message::Text(sanitized_text)).await.is_err() {
+                                    break;
+                                }
+                            } else {
+                                let sanitized_str = sanitizer.sanitize_string(&text);
+                                if client_write.send(Message::Text(sanitized_str)).await.is_err() {
+                                    break;
+                                }
                             }
                         }
                         Ok(Message::Close(_)) | Err(_) => break,
@@ -374,10 +383,12 @@ impl CdpBroker {
             });
 
             // Client WebSocket -> Upstream Chromium
+            let client_sanitizer = kage_core::SecretSanitizer::new();
             while let Some(msg) = client_read.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
-                        println!("[CDP BROKER] -> Client command: {}", text);
+                        let log_safe = client_sanitizer.sanitize_string(&text);
+                        println!("[CDP BROKER] -> Client command: {}", log_safe);
                         if up_write.send(Message::Text(text)).await.is_err() {
                             break;
                         }

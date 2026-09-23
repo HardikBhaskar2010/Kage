@@ -24,6 +24,7 @@ pub struct CdpClient {
     next_id: AtomicU64,
     cmd_tx: mpsc::Sender<(CdpRequest, oneshot::Sender<Result<CdpResponse, CdpError>>)>,
     event_tx: broadcast::Sender<CdpEvent>,
+    raw_event_tx: broadcast::Sender<serde_json::Value>,
 }
 
 impl std::fmt::Debug for CdpClient {
@@ -67,10 +68,12 @@ impl CdpClient {
         let (cmd_tx, mut cmd_rx) =
             mpsc::channel::<(CdpRequest, oneshot::Sender<Result<CdpResponse, CdpError>>)>(64);
         let (event_tx, _) = broadcast::channel::<CdpEvent>(256);
+        let (raw_event_tx, _) = broadcast::channel::<serde_json::Value>(256);
 
         let pending_requests: PendingMap = Arc::new(Mutex::new(HashMap::new()));
         let pending_reader = pending_requests.clone();
         let event_tx_clone = event_tx.clone();
+        let raw_event_tx_clone = raw_event_tx.clone();
 
         // Background reader task: demultiplex responses vs incoming domain events
         tokio::spawn(async move {
@@ -85,6 +88,13 @@ impl CdpClient {
                                     let _ = sender.send(Ok(resp));
                                     continue;
                                 }
+                            }
+                        }
+
+                        // Broadcast raw JSON event
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if val.get("id").is_none() && val.get("method").is_some() {
+                                let _ = raw_event_tx_clone.send(val);
                             }
                         }
 
@@ -123,12 +133,18 @@ impl CdpClient {
             next_id: AtomicU64::new(1),
             cmd_tx,
             event_tx,
+            raw_event_tx,
         })
     }
 
     /// Subscribe to typed asynchronous CDP domain events broadcast over the WebSocket.
     pub fn subscribe_events(&self) -> broadcast::Receiver<CdpEvent> {
         self.event_tx.subscribe()
+    }
+
+    /// Subscribe to raw, untyped (but upstream-sanitized) JSON CDP events broadcast over the WebSocket.
+    pub fn subscribe_raw_events(&self) -> broadcast::Receiver<serde_json::Value> {
+        self.raw_event_tx.subscribe()
     }
 
     /// Send a CDP command and await the correlated response value.
