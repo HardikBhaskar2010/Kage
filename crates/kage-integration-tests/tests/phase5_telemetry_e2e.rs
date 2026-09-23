@@ -564,7 +564,7 @@ async fn test_phase5_empirical_telemetry_e2e() {
     println!("     [Sink 3: Ring Buffer]        raw_secret ∉ ring_buffer        (Bearer [REDACTED] confirmed)");
     println!("     [Sink 4: Context Snapshot]   raw_secret ∉ context_snapshot   (Bearer [REDACTED] confirmed)");
     println!("     [Sink 5: Audit Persistence]  raw_secret ∉ audit_payload      (Bearer [REDACTED] confirmed)");
-    println!("  [PASS] Gate P5-GATE-03: Zero-Leak Sensitive Redaction Empirically Sealed across All Downstream Sinks.");
+    println!("  [PASS] Gate P5-GATE-03: INV-06 downstream zero-leak enforcement verified across five sinks.");
 
     // =========================================================================
     // Gate P5-GATE-04: Real DOM Tree Ingestion & 4-Stage Pruning with Report
