@@ -713,9 +713,9 @@ async fn test_phase5_empirical_telemetry_e2e() {
     println!("  [PASS] Gate P5-GATE-05: Untrusted XML Framing & Prompt Injection Defense Verified.");
 
     // =========================================================================
-    // Gate P5-GATE-06: Sub-2ms Active Tab Context Swapping on Populated Tabs
+    // Gate P5-GATE-06: Sub-2ms Active Tab Context Swapping (Populated Telemetry Contexts)
     // =========================================================================
-    println!("\n=== [Gate P5-GATE-06] Sub-2ms Active Tab Context Swapping on Populated Tabs ===");
+    println!("\n=== [Gate P5-GATE-06] Sub-2ms Active Tab Context Swapping (Populated Telemetry Contexts) ===");
     let tab2_id = TabId::new();
     let tab2_telemetry = telemetry_coordinator.register_tab(tab2_id, "https://example.com/tab2").await;
 
@@ -802,7 +802,7 @@ async fn test_phase5_empirical_telemetry_e2e() {
         "Max swap duration {:?} exceeded 2ms benchmark",
         max_swap_duration / 2
     );
-    println!("  [PASS] Gate P5-GATE-06: Sub-2ms Active Tab Context Swapping Fully Verified on Populated Tabs.");
+    println!("  [PASS] Gate P5-GATE-06: Sub-2ms Active Tab Context Swapping Fully Verified on Populated Telemetry Contexts.");
 
     println!("\n================================================================================");
     println!("=== KAGE PHASE 5: ALL 6 EMPIRICAL TELEMETRY GATES PASSED (100% LIVE CEF)   ===");
