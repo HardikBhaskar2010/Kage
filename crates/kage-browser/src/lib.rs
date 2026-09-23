@@ -15,6 +15,7 @@ pub mod manager;
 pub mod navigation;
 pub mod profile;
 pub mod tab;
+pub mod telemetry_coordinator;
 
 pub use errors::BrowserError;
 pub use events::{
@@ -32,3 +33,4 @@ pub use tab::{
     ProfileId, RendererCrashDiagnostics, RendererTerminationStatus, Tab, TabHealth, TabId,
     TabLifecycle, TabSummary,
 };
+pub use telemetry_coordinator::{TabTelemetry, TelemetryCoordinator};

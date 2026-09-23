@@ -77,6 +77,75 @@ pub enum CdpEvent {
         target_id: String,
     },
 
+    /// `DOM.setChildNodes` — children set for parent node.
+    #[serde(rename = "DOM.setChildNodes")]
+    DomSetChildNodes {
+        #[serde(rename = "parentId")]
+        parent_id: i64,
+        nodes: Vec<Value>,
+    },
+
+    /// `DOM.childNodeRemoved` — child node removed from parent.
+    #[serde(rename = "DOM.childNodeRemoved")]
+    DomChildNodeRemoved {
+        #[serde(rename = "parentNodeId")]
+        parent_node_id: i64,
+        #[serde(rename = "nodeId")]
+        node_id: i64,
+    },
+
+    /// `DOM.attributeModified` — element attribute modified.
+    #[serde(rename = "DOM.attributeModified")]
+    DomAttributeModified {
+        #[serde(rename = "nodeId")]
+        node_id: i64,
+        name: String,
+        value: String,
+    },
+
+    /// `DOM.attributeRemoved` — element attribute removed.
+    #[serde(rename = "DOM.attributeRemoved")]
+    DomAttributeRemoved {
+        #[serde(rename = "nodeId")]
+        node_id: i64,
+        name: String,
+    },
+
+    /// `Network.loadingFinished` — network request completed.
+    #[serde(rename = "Network.loadingFinished")]
+    NetworkLoadingFinished {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "timestamp", default)]
+        timestamp: Option<f64>,
+    },
+
+    /// `Network.loadingFailed` — network request failed.
+    #[serde(rename = "Network.loadingFailed")]
+    NetworkLoadingFailed {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "errorText")]
+        error_text: String,
+        #[serde(rename = "canceled", default)]
+        canceled: Option<bool>,
+    },
+
+    /// `Runtime.exceptionThrown` — unhandled exception in V8 context.
+    #[serde(rename = "Runtime.exceptionThrown")]
+    RuntimeExceptionThrown {
+        #[serde(rename = "timestamp")]
+        timestamp: f64,
+        #[serde(rename = "exceptionDetails")]
+        exception_details: Value,
+    },
+
+    /// `Log.entryAdded` — logging entry added.
+    #[serde(rename = "Log.entryAdded")]
+    LogEntryAdded {
+        entry: Value,
+    },
+
     /// `Target.attachedToTarget` — attached to target session.
     #[serde(rename = "Target.attachedToTarget")]
     AttachedToTarget {
@@ -93,6 +162,10 @@ pub enum CdpEvent {
         #[serde(default)]
         target_id: Option<String>,
     },
+
+    /// Fallback for unhandled or arbitrary Chromium domain events.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Information about a Chromium CDP target.

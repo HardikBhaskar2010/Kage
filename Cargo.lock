@@ -2036,6 +2036,8 @@ dependencies = [
 name = "kage-browser"
 version = "0.2.1"
 dependencies = [
+ "kage-cdp",
+ "kage-context",
  "kage-core",
  "kage-engine",
  "serde",
@@ -2141,6 +2143,7 @@ dependencies = [
  "futures-util",
  "kage-browser",
  "kage-cdp",
+ "kage-context",
  "kage-core",
  "kage-engine",
  "kage-storage",

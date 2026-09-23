@@ -54,11 +54,21 @@ fn secret_patterns() -> &'static [Regex] {
 // ---------------------------------------------------------------------------
 
 /// Stateless recursive sanitizer for JSON values.
+#[derive(Debug, Clone, Default)]
 pub struct SecretSanitizer;
 
 impl SecretSanitizer {
     pub fn new() -> Self {
         SecretSanitizer
+    }
+
+    /// Redact secret patterns within a single string slice.
+    pub fn sanitize_string(&self, s: &str) -> String {
+        let mut result = s.to_string();
+        for pattern in secret_patterns() {
+            result = pattern.replace_all(&result, "[REDACTED]").into_owned();
+        }
+        result
     }
 
     /// Recursively walk `value` and redact any string leaves that match a
@@ -103,17 +113,8 @@ impl SecretSanitizer {
     }
 
     /// Redact secret patterns within a single string value.
-    fn redact_string(&self, mut s: String) -> String {
-        for pattern in secret_patterns() {
-            s = pattern.replace_all(&s, "[REDACTED]").into_owned();
-        }
-        s
-    }
-}
-
-impl Default for SecretSanitizer {
-    fn default() -> Self {
-        Self::new()
+    fn redact_string(&self, s: String) -> String {
+        self.sanitize_string(&s)
     }
 }
 
