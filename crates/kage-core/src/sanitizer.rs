@@ -132,17 +132,28 @@ impl SecretSanitizer {
         }
     }
 
-    /// Returns `true` if the JSON key itself indicates a secret field.
+    /// Returns `true` if the JSON key itself indicates a secret **scalar** field
+    /// whose entire value should be wholesale-redacted.
+    ///
+    /// ## Design note
+    ///
+    /// This list must be conservative and target scalar secret fields only.
+    /// Do NOT include structural keys like `"cookies"` — `Network.getCookies`
+    /// returns `{"cookies": [...]}` whose array must be walked recursively so
+    /// that only secret *values* inside cookie objects are caught by regex patterns.
+    /// Individual cookie `value` fields containing JWTs/Bearer tokens are handled there.
     fn is_secret_key(&self, key: &str) -> bool {
         let lower = key.to_lowercase();
-        [
-            "token", "password", "passwd", "secret", "api_key", "apikey", "access_token",
-            "refresh_token", "auth_token", "bearer", "private_key", "cookie",
+        // Exact matches only — avoids matching "cookies" when checking "cookie",
+        // or "token_count" when checking "token".
+        const SECRET_KEYS: &[&str] = &[
+            "password", "passwd", "secret", "api_key", "apikey",
+            "access_token", "refresh_token", "auth_token", "bearer", "private_key",
             "session_id", "session_token", "csrf_token", "credit_card", "card_number",
-            "cvv", "cvc", "ssn", "authorization", "auth_header",
-        ]
-        .iter()
-        .any(|&pat| lower.contains(pat))
+            "cvv", "cvc", "ssn", "authorization", "auth_header", "token",
+            // "cookie" intentionally omitted — structural array key from Network.getCookies
+        ];
+        SECRET_KEYS.iter().any(|&pat| lower == pat)
     }
 
     /// Redact secret patterns within a single string value.
@@ -208,5 +219,36 @@ mod tests {
             output,
             "console.error('Request failed with Bearer [REDACTED] and password=[REDACTED]');"
         );
+    }
+
+    #[test]
+    fn cookies_structural_key_is_not_wholesale_redacted() {
+        // Network.getCookies returns {"cookies": [...]}
+        // The array must be walked, NOT wholesale-redacted because "cookie" appears in the key.
+        let sanitizer = SecretSanitizer::new();
+        let input = json!({
+            "cookies": [
+                { "name": "theme", "value": "dark", "domain": "example.com" },
+                { "name": "session", "value": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1In0.abc", "domain": "example.com" }
+            ]
+        });
+        let output = sanitizer.sanitize(input);
+        assert!(output["cookies"].is_array(), "cookies array must not be wholesale-redacted");
+        let cookies = output["cookies"].as_array().unwrap();
+        assert_eq!(cookies.len(), 2);
+        assert_eq!(cookies[0]["value"], "dark", "safe cookie value must be preserved");
+        let session_val = cookies[1]["value"].as_str().unwrap();
+        assert!(!session_val.contains("eyJhbGci"), "JWT cookie value must be redacted: {session_val}");
+        assert!(session_val.contains("[REDACTED]"), "JWT must become [REDACTED]: {session_val}");
+    }
+
+    #[test]
+    fn session_token_exact_key_is_redacted_but_token_count_is_not() {
+        let sanitizer = SecretSanitizer::new();
+        let input = json!({ "session_token": "s3cr3t-val", "token_count": 5 });
+        let output = sanitizer.sanitize(input);
+        assert_eq!(output["session_token"], "[REDACTED]");
+        // "token_count" must NOT be redacted — broad `contains("token")` was the old bug
+        assert_eq!(output["token_count"], 5, "token_count must not be redacted");
     }
 }

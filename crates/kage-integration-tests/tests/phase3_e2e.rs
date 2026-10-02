@@ -227,6 +227,7 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 /// Helper to scan subprocess role diagnostic files written by kage-cef-subprocess
+#[allow(dead_code)]
 fn find_subprocess_by_role(role_dir: &std::path::Path, role_type: &str) -> Option<(u32, String)> {
     let parent_pid = std::process::id();
     let default_role_dir = std::env::temp_dir().join("kage_subprocess_roles");

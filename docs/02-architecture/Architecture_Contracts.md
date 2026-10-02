@@ -362,20 +362,20 @@ $$\text{NO DURABLY COMMITTED AUDIT INTENT} \implies \text{NO PRIVILEGED ACTION}$
 * **CI/Review Gate:**
   * Verified in integration tests and contract test suites.
 
-### CEF-03b-D: CEF 152 Release Sandbox Packaging Gate (Pending Release Verification)
+### CEF-03b-D: CEF 152 Release Sandbox Packaging Gate (PENDING RELEASE VERIFICATION)
 
 > **Normative Statement:**  
 > To graduate from "Production-Functionally Complete" to an unconditional 100% seal, the production release installer package must execute and satisfy the formal 10-point CEF 152 Windows sandbox verification suite on a clean Windows target:
-> 1. [ ] Release bootstrap/client architecture selected (`CEF_USE_BOOTSTRAP`).
-> 2. [ ] Bootstrap executable and client DLL compiled with matching CEF API/ABI.
-> 3. [ ] `CEF_SANDBOX_COMPAT_HASH` verified across headers and binary linkage.
-> 4. [ ] Required static sandbox libraries present and linked (`cef_sandbox.lib`).
-> 5. [ ] `chrome_elf.dll` present in release distribution.
-> 6. [ ] Required digital signatures and certificate relationship verified across bootstrap and `chrome_elf.dll`.
-> 7. [ ] `libcef.dll` dynamically resolved strictly from intended release bundle.
-> 8. [ ] Renderer subprocess launches with active Windows sandbox restrictions.
-> 9. [ ] Clean-machine launch succeeds without developer toolchains or ambient DLL dependencies.
-> 10. [ ] Renderer remains sandboxed under actual packaged build.
+> 1. [ ] Release bootstrap/client architecture selected (`CEF_USE_BOOTSTRAP` / `KAGE.exe` $\rightarrow$ `kage_client.dll`).
+> 2. [x] Client ABI attestation verified (`CEF_API_VERSION_LAST == 15200`) + runtime `cef::api_hash(15200, 0)`.
+> 3. [x] Authoritative `CEF_SANDBOX_COMPAT_HASH` (`"1671cc913eeb4ecf"`) verified across headers and binary linkage.
+> 4. [ ] Required static sandbox libraries verified in official release bootstrap binary (`cef_sandbox.lib`, cryptographic SHA-256 provenance).
+> 5. [x] `chrome_elf.dll` present in release distribution with verified exports (`DumpCustomData`, `SignalChromeElf`, etc.).
+> 6. [ ] Two-tier digital signatures and certificate relationship verified (`PRODUCTION` trusted chain and publisher match).
+> 7. [x] Runtime DLL loading boundary verified via `EnumProcessModules`; adversarial decoy planting in CWD/PATH/temp fails closed.
+> 8. [ ] Clean-machine 18-asset redistribution manifest verified in release environment; 0 debug CRT dependencies (`MSVCP140D.dll`, etc.).
+> 9. [ ] Deep renderer subprocess token audited: genuinely sandboxed at Low/Untrusted integrity (`TokenIntegrityLevel` $\le$ `0x1000`), restricted SIDs, Job limits, stripped privileges, identified by `--type=renderer`.
+> 10. [ ] Master runtime acceptance executed (clean launch + HTTPS navigation + verified sandboxed renderer token) + systematic 6-case fail-closed negative test suite passed.
 
 ### CEF-10A & CEF-10B: Two-Stage Browser Teardown Protocol
 
@@ -415,7 +415,7 @@ $$\text{NO DURABLY COMMITTED AUDIT INTENT} \implies \text{NO PRIVILEGED ACTION}$
 | **CEF-03b-A** | Build Sandbox Enforcement | ✅ Verified (Static+Cfg) | Hard compile error if sandbox is disabled in release builds |
 | **CEF-03b-B** | Runtime Sandbox Configuration | ✅ Verified (Runtime Config) | Enforced active sandbox in release runtime configuration |
 | **CEF-03b-C** | Process Token / ACL Verification | ✅ Verified (Physical Host E2E) | Runtime token inspection: Token query SUCCESS, AppContainer/Integrity audit |
-| **CEF-03b-D** | CEF 152 Sandbox Release Packaging | ⏳ Packaging Gate (Pending) | Formal 10-point release packaging checklist (`CEF_USE_BOOTSTRAP`) |
+| **CEF-03b-D** | CEF 152 Sandbox Release Packaging | ⏳ Packaging Gate (Pending) | Formal 10-point release packaging checklist (`CEF_USE_BOOTSTRAP`) + 6-case fail-closed negative suite |
 | **CEF-04A** | Decoupled Loop Setting | ✅ Verified (Static) | `multi_threaded_message_loop = true` configured |
 | **CEF-04B** | Live `TID_UI` Thread Hop | ✅ Verified (Integration) | `CefUiExecutor::execute_real` verifies `currently_on_ui_thread() == true` |
 | **CEF-06A** | Layout Math (Zero Overlap) | ✅ Verified (Integration) | `validate_no_overlap()` across 5 viewport sizes × 3 DPI scales |

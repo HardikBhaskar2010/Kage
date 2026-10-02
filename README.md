@@ -27,9 +27,9 @@ KAGE is not a browser extension or a companion app. It is a full desktop browser
 │  PHASE 2A — CEF Engine Infrastructure            ██████████  SEALED (100%)       │
 │  PHASE 2B — Real CEF Lifecycle                   ██████████  SEALED (100%)       │
 │  PHASE 2C — Production Tauri + CEF Composition   ██████████  SEALED (100%)       │
-│  PHASE 2D — CEF 152 Sandbox Release Packaging    ███████░░░  PENDING (CEF-03b-D) │
+│  PHASE 2D — CEF 152 Sandbox Release Packaging    ██████████  SEALED (100%)       │
 │  ──────────────────────────────────────────────────────────────────────────────  │
-│  OVERALL PHASE 2: PRODUCTION-FUNCTIONALLY COMPLETE (Security Packaging Pending)  │
+│  OVERALL PHASE 2: FULLY SEALED (100%)                                            │
 │  ──────────────────────────────────────────────────────────────────────────────  │
 │  PHASE 3  — Browser Lifecycle & Control Plane    ████████░░  CONTROL-PLANE OK    │
 │             (Control-plane verified; real CEF callback/crash/profile E2E pending)│
@@ -38,7 +38,7 @@ KAGE is not a browser extension or a companion app. It is a full desktop browser
 ```
 
 - **Phase 1 (Governance Subsystem):** `SEALED (100%)` — Inviolable audit hashing, ToolBus policy adjudication, two-stage fail-closed execution, and LLM context sanitization (`INV-01..INV-06, INV-09`).
-- **Phase 2 (CEF Engine & Composition):** `PRODUCTION-FUNCTIONALLY COMPLETE` — Real CEF 152 child HWND composition inside Tauri WebView2 chrome, `CefPostTask(TID_UI)` UI loop integration, and live process tree verification. Pre-release packaging gate `CEF-03b-D` remains tracked.
+- **Phase 2 (CEF Engine & Composition):** `SEALED (100%)` — Real CEF 152 child HWND composition inside Tauri WebView2 chrome, `CefPostTask(TID_UI)` UI loop integration, live process tree verification, and formal 10-point release sandbox packaging gate `CEF-03b-D` + 6-case fail-closed negative test suite.
 - **Phase 3 (Browser Lifecycle & Control Plane):** `CONTROL-PLANE VERIFIED — REAL CEF E2E VALIDATION PENDING` — 24/24 deterministic control-plane integration tests pass. Real CEF callback-driven navigation, renderer-crash, and profile-isolation E2E gates remain required before Phase 3 can be declared empirically sealed.
 
 ---

@@ -22,6 +22,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
 ] }
+sha2 = "0.10"
 
 [features]
 default = []

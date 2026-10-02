@@ -27,8 +27,12 @@ pub use coordinates::{
 };
 pub use errors::{CefExecutorError, EngineError};
 pub use executor::{BoxedUiTask, CefUiExecutor};
-pub use runtime::{CefEngineState, CefRuntime, RuntimeConfig};
-pub use subprocess::SubprocessManager;
+pub use runtime::{CefEngineState, CefLifecycleObserver, CefRuntime, RuntimeConfig};
+pub use subprocess::{
+    DetailedSandboxProfile, PackagingPointResult, SandboxPackagingReport,
+    SandboxPackagingValidator, SubprocessManager, TestParentWindow, ValidationMode,
+    CANONICAL_CEF_REDIST_FILES,
+};
 pub use surface::{
     CefBrowserSurface, PopupPolicyDecision, PopupRequest, SurfaceLifecycleState,
 };

@@ -18,7 +18,7 @@ export class MockBrowserAdapter implements BrowserAdapter {
     },
   ];
 
-  async createTab(url = "", title = "New Tab"): Promise<TabInfo> {
+  async createTab(url = "", title = "New Tab", profileId = "personal"): Promise<TabInfo> {
     const newTab: TabInfo = {
       id: `tab-${Date.now()}`,
       url,
@@ -28,6 +28,7 @@ export class MockBrowserAdapter implements BrowserAdapter {
       canGoBack: false,
       canGoForward: false,
       isSecure: url.startsWith("https://"),
+      profile_id: profileId,
     };
     this.tabs.push(newTab);
     return newTab;

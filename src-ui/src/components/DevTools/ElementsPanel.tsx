@@ -2,7 +2,9 @@ import React, { useState } from "react";
 import "./ElementsPanel.css";
 import { useBrowser } from "../../context/BrowserContext";
 import type { DOMNode } from "../../context/BrowserContext";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronDown, RefreshCw } from "lucide-react";
+import { isTauriEnvironment } from "../../adapters/BrowserAdapter";
+import { getDomBounds, getDomAttributes } from "../../ipc/client";
 
 interface DOMTreeNodeProps {
   node: DOMNode;
@@ -80,12 +82,59 @@ const DOMTreeNode: React.FC<DOMTreeNodeProps> = ({ node, depth, selectedId, onSe
 };
 
 export const ElementsPanel: React.FC = () => {
-  const { activeDomTree, selectedDomNodeId, setSelectedDomNodeId } = useBrowser();
+  const {
+    activeDomTree,
+    selectedDomNodeId,
+    setSelectedDomNodeId,
+    refreshDomTree,
+    isLoadingDom,
+    activeTabId,
+  } = useBrowser();
   const [activeNode, setActiveNode] = useState<DOMNode | null>(null);
 
-  const handleSelect = (node: DOMNode) => {
+  const handleSelect = async (node: DOMNode) => {
     setSelectedDomNodeId(node.id);
     setActiveNode(node);
+
+    if (isTauriEnvironment() && activeTabId) {
+      const nid = parseInt(node.id, 10);
+      if (!isNaN(nid) && nid > 0) {
+        try {
+          const [boundsRes, attrRes] = await Promise.allSettled([
+            getDomBounds(activeTabId, nid),
+            getDomAttributes(activeTabId, nid),
+          ]);
+          let updatedNode = { ...node };
+          if (boundsRes.status === "fulfilled" && boundsRes.value && typeof boundsRes.value === "object") {
+            const m = (boundsRes.value as any).model;
+            if (m) {
+              updatedNode.boxModel = {
+                margin: Math.round(m.margin?.[0] ?? 0),
+                border: Math.round(m.border?.[0] ?? 0),
+                padding: Math.round(m.padding?.[0] ?? 0),
+                width: Math.round(m.width ?? 0),
+                height: Math.round(m.height ?? 0),
+              };
+            }
+          }
+          if (attrRes.status === "fulfilled" && attrRes.value && typeof attrRes.value === "object") {
+            const rawAttrs = (attrRes.value as any).attributes;
+            const parsedAttrs: Record<string, string> = {};
+            if (Array.isArray(rawAttrs)) {
+              for (let i = 0; i < rawAttrs.length; i += 2) {
+                parsedAttrs[rawAttrs[i]] = rawAttrs[i + 1] ?? "";
+              }
+            } else if (typeof rawAttrs === "object" && rawAttrs !== null) {
+              Object.assign(parsedAttrs, rawAttrs);
+            }
+            updatedNode.attributes = { ...updatedNode.attributes, ...parsedAttrs };
+          }
+          setActiveNode(updatedNode);
+        } catch {
+          // Keep current node state
+        }
+      }
+    }
   };
 
   const box = activeNode?.boxModel || { margin: 0, border: 0, padding: 0, width: 1440, height: 900 };
@@ -96,7 +145,17 @@ export const ElementsPanel: React.FC = () => {
       <div className="elements-tree-pane">
         <div className="elements-pane-header">
           <span>DOM Tree Hierarchy</span>
-          <span className="elements-hint">Click a node to inspect styles & box model</span>
+          <div className="elements-pane-header-actions">
+            <span className="elements-hint">Click node to inspect</span>
+            <button
+              className={`elements-refresh-btn ${isLoadingDom ? "elements-refresh-btn--spinning" : ""}`}
+              onClick={refreshDomTree}
+              title="Refresh DOM tree"
+              aria-label="Refresh DOM tree"
+            >
+              <RefreshCw size={12} strokeWidth={2} />
+            </button>
+          </div>
         </div>
         <div className="elements-tree-scroll">
           <DOMTreeNode

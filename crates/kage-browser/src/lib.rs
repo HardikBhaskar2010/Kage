@@ -9,14 +9,17 @@
 //! - `INV-11B`: Engine host process failure aborts operations globally.
 //! - `INV-12`: Browser and surface identity are explicit and never inferred.
 
+pub mod bridge;
 pub mod errors;
 pub mod events;
 pub mod manager;
 pub mod navigation;
+pub mod permission;
 pub mod profile;
 pub mod tab;
 pub mod telemetry_coordinator;
 
+pub use bridge::{CefBridgeEvent, CefTabBridge};
 pub use errors::BrowserError;
 pub use events::{
     BrowserEvent, BrowserEventBus, BrowserEventKind, BrowserEventProducer, EventClass,
@@ -26,7 +29,13 @@ pub use manager::TabManager;
 pub use navigation::{
     BrowserOperationId, NavigationController, NavigationCorrelation, PendingOperation,
 };
-pub use profile::{Profile, ProfileKind, ProfileManager};
+pub use permission::{
+    OriginPermissionRule, PermissionDecision, PermissionManager, PermissionType,
+};
+pub use profile::{
+    record_session_escalation_intent, record_session_escalation_outcome, Profile, ProfileKind,
+    ProfileManager, ProfileMetadata,
+};
 pub use tab::{
     BrowserIdentity, BrowserSurfaceId, CdpBinding, CdpSession, CefTerminationStatus,
     NavigationCancelCause, NavigationId, NavigationRecord, NavigationSource, NavigationState,

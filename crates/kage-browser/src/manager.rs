@@ -16,6 +16,7 @@ use crate::events::{
     BrowserEventBus, BrowserEventKind, BrowserEventProducer, TabStateSnapshot,
 };
 use crate::navigation::NavigationController;
+use crate::permission::PermissionManager;
 use crate::profile::ProfileManager;
 use crate::tab::{
     BrowserSurfaceId, CdpBinding, ProfileId, RendererCrashDiagnostics, Tab, TabHealth, TabId,
@@ -27,6 +28,7 @@ pub struct TabManager {
     tabs: RwLock<HashMap<TabId, Arc<Tab>>>,
     active_tab: RwLock<Option<TabId>>,
     profile_manager: Arc<ProfileManager>,
+    permission_manager: Arc<PermissionManager>,
     navigation: Arc<NavigationController>,
     event_bus: BrowserEventBus,
 }
@@ -37,13 +39,21 @@ impl TabManager {
         event_bus: BrowserEventBus,
     ) -> Self {
         let navigation = Arc::new(NavigationController::new(event_bus.clone()));
+        let permission_manager = Arc::new(PermissionManager::new(profile_manager.base_dir().clone()));
         Self {
             tabs: RwLock::new(HashMap::new()),
             active_tab: RwLock::new(None),
             profile_manager,
+            permission_manager,
             navigation,
             event_bus,
         }
+    }
+
+    /// Builder method to supply a custom or pre-configured PermissionManager.
+    pub fn with_permission_manager(mut self, permission_manager: Arc<PermissionManager>) -> Self {
+        self.permission_manager = permission_manager;
+        self
     }
 
     /// Access the navigation controller.
@@ -59,6 +69,29 @@ impl TabManager {
     /// Access the profile manager.
     pub fn profile_manager(&self) -> &Arc<ProfileManager> {
         &self.profile_manager
+    }
+
+    /// Access the permission manager.
+    pub fn permission_manager(&self) -> &Arc<PermissionManager> {
+        &self.permission_manager
+    }
+
+    /// Escalate a tab's bound profile (e.g. from AgentSandbox to Personal/Work shared session).
+    pub async fn escalate_tab_profile(
+        &self,
+        tab_id: TabId,
+        target_profile: ProfileId,
+    ) -> Result<(), BrowserError> {
+        // Ensure target profile exists and has directory structure
+        self.profile_manager.get_or_create(&target_profile).await?;
+
+        let tab = self.get_tab(tab_id).await?;
+        {
+            let mut ident = tab.identity.write().await;
+            ident.profile_id = target_profile.clone();
+        }
+        info!(tab_id = %tab_id, target_profile = %target_profile, "tab profile escalated");
+        Ok(())
     }
 
     /// Generate an authoritative snapshot of the entire control plane state (for gap resync).
@@ -322,6 +355,29 @@ impl TabManager {
             summaries.push(tab.summary().await);
         }
         summaries
+    }
+
+    /// Lookup TabId associated with a CEF browser instance identifier.
+    pub async fn tab_id_for_browser(&self, cef_browser_id: i32) -> Option<TabId> {
+        if let Some(tab_id) = self.navigation.tab_id_for_browser(cef_browser_id).await {
+            return Some(tab_id);
+        }
+        let tabs = self.tabs.read().await;
+        for (id, tab) in tabs.iter() {
+            if tab.identity.read().await.cef_browser_id == Some(cef_browser_id) {
+                return Some(*id);
+            }
+        }
+        None
+    }
+
+    /// Lookup CEF browser identifier associated with a TabId.
+    pub async fn browser_id_for_tab(&self, tab_id: TabId) -> Option<i32> {
+        if let Ok(tab) = self.get_tab(tab_id).await {
+            tab.identity.read().await.cef_browser_id
+        } else {
+            None
+        }
     }
 
     /// Handle renderer process termination (INV-11A: Failure cannot grant authority).

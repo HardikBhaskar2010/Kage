@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { aiProviderRegistry } from "../../services/aiProviderDiscovery";
 import { SpotlightCard, ShimmerButton, BorderBeam } from "../ui";
+import { SitePermissionsPanel } from "./SitePermissionsPanel";
 
 export const SettingsPage: React.FC = () => {
   const {
@@ -25,6 +26,8 @@ export const SettingsPage: React.FC = () => {
     setAdBlockerEnabled,
     aiModel,
     setAiModel,
+    profiles,
+    activeProfileId,
   } = useBrowser();
 
   const [activeTab, setActiveTab] = useState<"appearance" | "ai" | "privacy" | "about">("appearance");
@@ -280,6 +283,13 @@ export const SettingsPage: React.FC = () => {
                     <p className="settings-desc">Strips Authorization headers, API keys, and session cookies from context.</p>
                   </div>
                   <span className="sec-tier-status sec-tier-status--granted">Active</span>
+                </div>
+
+                <div style={{ marginTop: "24px" }}>
+                  <SitePermissionsPanel
+                    profiles={profiles}
+                    activeProfileId={activeProfileId}
+                  />
                 </div>
               </div>
             )}

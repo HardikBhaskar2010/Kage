@@ -1,6 +1,15 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { getBrowserAdapter } from "../adapters/BrowserAdapter";
+import { getBrowserAdapter, isTauriEnvironment } from "../adapters/BrowserAdapter";
 import { getTelemetryProvider } from "../adapters/TelemetryProvider";
+import {
+  getDomDocument,
+  listProfiles,
+  createProfile as ipcCreateProfile,
+  deleteProfile as ipcDeleteProfile,
+  getActiveProfile,
+} from "../ipc/client";
+import type { ProfileMetadata, ProfileKind } from "../ipc/client";
+import { listen } from "@tauri-apps/api/event";
 
 export interface TabState {
   id: string;
@@ -13,6 +22,7 @@ export interface TabState {
   historyIndex: number;
   isLoading: boolean;
   isSecure: boolean;
+  profile_id?: string;
 }
 
 export interface Bookmark {
@@ -89,13 +99,37 @@ interface BrowserContextType {
   tabs: TabState[];
   activeTabId: string;
   activeTab: TabState | undefined;
-  createTab: (url?: string, title?: string) => void;
+  createTab: (url?: string, title?: string, profileId?: string) => void;
   closeTab: (id: string) => void;
   switchTab: (id: string) => void;
   navigate: (url: string) => void;
   goBack: () => void;
   goForward: () => void;
   refresh: () => void;
+
+  // Profiles & Permission State (Phase 7 - INV-06, INV-10)
+  profiles: ProfileMetadata[];
+  activeProfileId: string;
+  activeProfile: ProfileMetadata | undefined;
+  profileSwitcherOpen: boolean;
+  setProfileSwitcherOpen: (open: boolean) => void;
+  escalationModal: {
+    isOpen: boolean;
+    tabId: string;
+    targetProfileId: string;
+    reason: string;
+  } | null;
+  setEscalationModal: (modal: {
+    isOpen: boolean;
+    tabId: string;
+    targetProfileId: string;
+    reason: string;
+  } | null) => void;
+  createProfile: (name: string, kind: ProfileKind, color?: string, icon?: string) => Promise<ProfileMetadata>;
+  deleteProfile: (profileId: string) => Promise<void>;
+  switchProfile: (profileId: string) => void;
+  openTabInProfile: (profileId: string, url?: string) => void;
+  requestSessionEscalation: (tabId: string, targetProfileId: string, reason: string) => Promise<boolean>;
 
   // Active Tools & Drawers
   activeTool: ActiveTool;
@@ -127,8 +161,10 @@ interface BrowserContextType {
   clearNetworkRequests: () => void;
 
   activeDomTree: DOMNode;
+  isLoadingDom: boolean;
   selectedDomNodeId: string | null;
   setSelectedDomNodeId: (id: string | null) => void;
+  refreshDomTree: () => Promise<void>;
 
   // Settings state
   accentTheme: "peach" | "violet" | "frost";
@@ -141,6 +177,39 @@ interface BrowserContextType {
   setAiModel: (model: string) => void;
 }
 
+const DEFAULT_PROFILES: ProfileMetadata[] = [
+  {
+    id: "personal",
+    name: "Personal",
+    kind: "personal",
+    color: "#3B82F6",
+    icon: "user",
+    created_at: Date.now(),
+    last_used: Date.now(),
+    is_ephemeral: false,
+  },
+  {
+    id: "work",
+    name: "Work Workspace",
+    kind: "work",
+    color: "#8B5CF6",
+    icon: "briefcase",
+    created_at: Date.now(),
+    last_used: Date.now(),
+    is_ephemeral: false,
+  },
+  {
+    id: "agent_sandbox",
+    name: "Agent Clean Sandbox",
+    kind: "agent_sandbox",
+    color: "#EC4899",
+    icon: "shield-alert",
+    created_at: Date.now(),
+    last_used: Date.now(),
+    is_ephemeral: true,
+  },
+];
+
 const INITIAL_TABS: TabState[] = [
   {
     id: "tab-1",
@@ -152,6 +221,7 @@ const INITIAL_TABS: TabState[] = [
     historyIndex: 0,
     isLoading: false,
     isSecure: true,
+    profile_id: "personal",
   },
 ];
 
@@ -249,6 +319,67 @@ const INITIAL_REQUESTS: NetworkRequest[] = [
   },
 ];
 
+export function transformCdpNode(cdpNode: any): DOMNode | null {
+  if (!cdpNode) return null;
+
+  if (cdpNode.nodeType === 9 && Array.isArray(cdpNode.children)) {
+    const htmlChild = cdpNode.children.find((c: any) => c.nodeType === 1);
+    if (htmlChild) return transformCdpNode(htmlChild);
+  }
+
+  const rawTag = cdpNode.localName || cdpNode.nodeName || "";
+  const tag = rawTag.toLowerCase().replace(/^#/, "");
+
+  const attributes: Record<string, string> = {};
+  let className: string | undefined = undefined;
+
+  if (Array.isArray(cdpNode.attributes)) {
+    for (let i = 0; i < cdpNode.attributes.length; i += 2) {
+      const k = cdpNode.attributes[i];
+      const v = cdpNode.attributes[i + 1] ?? "";
+      if (k === "class") {
+        className = v;
+      } else {
+        attributes[k] = v;
+      }
+    }
+  }
+
+  let text: string | undefined = cdpNode.nodeValue || undefined;
+  const children: DOMNode[] = [];
+
+  if (Array.isArray(cdpNode.children)) {
+    for (const child of cdpNode.children) {
+      if (child.nodeType === 3) {
+        const val = (child.nodeValue || "").trim();
+        if (val) {
+          text = text ? `${text} ${val}` : val;
+        }
+      } else if (child.nodeType === 1) {
+        const trans = transformCdpNode(child);
+        if (trans) children.push(trans);
+      }
+    }
+  }
+
+  return {
+    id: String(cdpNode.nodeId || Math.random().toString(36).slice(2)),
+    tag: tag || "div",
+    className,
+    attributes,
+    text,
+    children: children.length > 0 ? children : undefined,
+    styles: {},
+    boxModel: {
+      margin: 0,
+      border: 0,
+      padding: 0,
+      width: 0,
+      height: 0,
+    },
+  };
+}
+
 const SAMPLE_DOM_TREE: DOMNode = {
   id: "node-root",
   tag: "html",
@@ -314,6 +445,76 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [activeTool, setActiveToolRaw] = useState<ActiveTool>("home");
   const [aiOpen, setAiOpenRaw] = useState(false);
 
+  // Profiles state (Phase 7 - INV-06, INV-10)
+  const [profiles, setProfiles] = useState<ProfileMetadata[]>(DEFAULT_PROFILES);
+  const [activeProfileId, setActiveProfileId] = useState<string>("personal");
+  const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
+  const [escalationModal, setEscalationModal] = useState<{
+    isOpen: boolean;
+    tabId: string;
+    targetProfileId: string;
+    reason: string;
+  } | null>(null);
+
+  // Load registered profiles on startup
+  useEffect(() => {
+    if (!isTauriEnvironment()) return;
+    listProfiles()
+      .then((loaded) => {
+        if (loaded && loaded.length > 0) {
+          setProfiles(loaded);
+        }
+      })
+      .catch((err) => console.warn("Failed to load profiles:", err));
+
+    getActiveProfile()
+      .then((meta) => {
+        if (meta && meta.id) {
+          setActiveProfileId(meta.id);
+        }
+      })
+      .catch((err) => console.warn("Failed to load active profile:", err));
+  }, []);
+
+  const createProfile = useCallback(
+    async (name: string, kind: ProfileKind, color?: string, icon?: string) => {
+      const id = `${kind}_${Date.now()}`;
+      if (isTauriEnvironment()) {
+        const created = await ipcCreateProfile({ id, name, kind, color, icon });
+        setProfiles((prev) => [...prev.filter((p) => p.id !== created.id), created]);
+        return created;
+      } else {
+        const fallback: ProfileMetadata = {
+          id,
+          name,
+          kind,
+          color: color || "#3B82F6",
+          icon: icon || "user",
+          created_at: Date.now(),
+          last_used: Date.now(),
+          is_ephemeral: kind === "agent_sandbox" || kind === "temporary",
+        };
+        setProfiles((prev) => [...prev, fallback]);
+        return fallback;
+      }
+    },
+    []
+  );
+
+  const deleteProfile = useCallback(async (profileId: string) => {
+    if (profileId === "personal") {
+      throw new Error("Cannot delete default personal profile");
+    }
+    if (isTauriEnvironment()) {
+      await ipcDeleteProfile(profileId);
+    }
+    setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+  }, []);
+
+  const switchProfile = useCallback((profileId: string) => {
+    setActiveProfileId(profileId);
+  }, []);
+
   // Synchronized state architecture (Apple Design & Emil Kowalski Design Engineering)
   // Single Source of Truth: Drawer visibility and rail tab state are 100% mutually consistent.
   const setActiveTool = useCallback((tool: ActiveTool) => {
@@ -354,8 +555,27 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Telemetry
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>(INITIAL_LOGS);
   const [networkRequests, setNetworkRequests] = useState<NetworkRequest[]>(INITIAL_REQUESTS);
-  const [activeDomTree] = useState<DOMNode>(SAMPLE_DOM_TREE);
+  const [activeDomTree, setActiveDomTree] = useState<DOMNode>(SAMPLE_DOM_TREE);
+  const [isLoadingDom, setIsLoadingDom] = useState<boolean>(false);
   const [selectedDomNodeId, setSelectedDomNodeId] = useState<string | null>("node-h1");
+
+  const refreshDomTree = useCallback(async () => {
+    if (!isTauriEnvironment() || !activeTabId) return;
+    setIsLoadingDom(true);
+    try {
+      const doc: any = await getDomDocument(activeTabId);
+      if (doc && doc.root) {
+        const transformed = transformCdpNode(doc.root);
+        if (transformed) {
+          setActiveDomTree(transformed);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch live DOM tree:", err);
+    } finally {
+      setIsLoadingDom(false);
+    }
+  }, [activeTabId]);
 
   // Settings
   const [accentTheme, setAccentTheme] = useState<"peach" | "violet" | "frost">("peach");
@@ -364,6 +584,157 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [aiModel, setAiModel] = useState<string>("GPT-4o");
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeProfile = profiles.find((p) => p.id === (activeTab?.profile_id || activeProfileId)) || profiles[0];
+
+  // ─── Native Chromium Control Plane Events ──────────────────────────
+  useEffect(() => {
+    if (!isTauriEnvironment()) return;
+
+    let unlistenFn: (() => void) | null = null;
+    listen<any>("kage:browser:event", (event) => {
+      const payload = event.payload;
+      if (!payload || !payload.kind) return;
+      const { tab_id, kind } = payload;
+
+      if (kind.NavigationStarted) {
+        const { requested_url } = kind.NavigationStarted;
+        setTabs((prev) =>
+          prev.map((t) =>
+            !tab_id || t.id === tab_id
+              ? { ...t, url: requested_url, isLoading: true }
+              : t
+          )
+        );
+      } else if (kind.NavigationCommitted) {
+        const { url } = kind.NavigationCommitted;
+        setTabs((prev) =>
+          prev.map((t) =>
+            !tab_id || t.id === tab_id
+              ? { ...t, url }
+              : t
+          )
+        );
+      } else if (kind.NavigationCompleted) {
+        const { url, http_status } = kind.NavigationCompleted;
+        setTabs((prev) =>
+          prev.map((t) =>
+            !tab_id || t.id === tab_id
+              ? {
+                  ...t,
+                  url,
+                  isLoading: false,
+                  title: t.title === "New Tab" || !t.title ? (url ? url.replace(/^https?:\/\//, "").split("/")[0] : "New Tab") : t.title,
+                }
+              : t
+          )
+        );
+        setConsoleLogs((prev) => [
+          ...prev,
+          {
+            id: `log-${Date.now()}`,
+            level: "info",
+            message: `Navigated to ${url} (HTTP ${http_status})`,
+            source: "network::http_loader",
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+      } else if (kind.NavigationFailed) {
+        const { url, error_code, reason } = kind.NavigationFailed;
+        setTabs((prev) =>
+          prev.map((t) =>
+            !tab_id || t.id === tab_id
+              ? { ...t, isLoading: false }
+              : t
+          )
+        );
+        setConsoleLogs((prev) => [
+          ...prev,
+          {
+            id: `log-${Date.now()}`,
+            level: "error",
+            message: `Navigation to ${url} failed: ${reason} (code ${error_code})`,
+            source: "network::http_loader",
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+      } else if (kind.NavigationCancelled) {
+        setTabs((prev) =>
+          prev.map((t) =>
+            !tab_id || t.id === tab_id
+              ? { ...t, isLoading: false }
+              : t
+          )
+        );
+      } else if (kind.TabAddressChanged) {
+        const { url } = kind.TabAddressChanged;
+        setTabs((prev) =>
+          prev.map((t) =>
+            !tab_id || t.id === tab_id
+              ? { ...t, url }
+              : t
+          )
+        );
+      } else if (kind.TabTitleChanged) {
+        const { title } = kind.TabTitleChanged;
+        setTabs((prev) =>
+          prev.map((t) =>
+            !tab_id || t.id === tab_id
+              ? { ...t, title }
+              : t
+          )
+        );
+      } else if (kind.ActiveTabSwitched) {
+        const { current } = kind.ActiveTabSwitched;
+        setActiveTabId(current);
+      } else if (kind.TabClosed) {
+        if (tab_id) {
+          setTabs((prev) => prev.filter((t) => t.id !== tab_id));
+        }
+      } else if (kind.ConsoleMessage) {
+        const { level, message } = kind.ConsoleMessage;
+        setConsoleLogs((prev) => [
+          ...prev,
+          {
+            id: `log-${Date.now()}-${Math.random()}`,
+            level: level === "error" ? "error" : level === "warn" ? "warn" : "info",
+            message,
+            source: "chromium::console",
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+      } else if (kind.StateSnapshot) {
+        const { snapshot } = kind.StateSnapshot;
+        if (snapshot && Array.isArray(snapshot.tabs) && snapshot.tabs.length > 0) {
+          setTabs((prev) => {
+            return snapshot.tabs.map((snapTab: any) => {
+              const existing = prev.find((p) => p.id === snapTab.id);
+              return {
+                id: snapTab.id,
+                title: snapTab.title || existing?.title || "New Tab",
+                url: snapTab.url || existing?.url || "",
+                canGoBack: snapTab.can_go_back ?? existing?.canGoBack ?? false,
+                canGoForward: snapTab.can_go_forward ?? existing?.canGoForward ?? false,
+                history: existing?.history || [snapTab.url || ""],
+                historyIndex: existing?.historyIndex || 0,
+                isLoading: snapTab.navigation_state?.Loading !== undefined,
+                isSecure: snapTab.url ? snapTab.url.startsWith("https") : true,
+                profile_id: snapTab.profile_id || existing?.profile_id || "personal",
+              };
+            });
+          });
+          if (snapshot.active_tab) {
+            setActiveTabId(snapshot.active_tab);
+          }
+        }
+      }
+    }).then((unlisten) => {
+      unlistenFn = unlisten;
+    });
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
 
   // ─── Telemetry Subscriptions (CDP / Mock) ─────────────────────────
   useEffect(() => {
@@ -405,24 +776,49 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   // ─── Tab Actions (Delegated to BrowserAdapter) ─────────────────────
-  const createTab = useCallback((url = "", title = "New Tab") => {
-    getBrowserAdapter().createTab(url, title).then((tabInfo) => {
-      const newId = tabInfo.id || `tab-${++tabIdCounter}`;
-      const newTab: TabState = {
-        id: newId,
-        title: tabInfo.title || (url ? url.replace(/^https?:\/\//, "").split("/")[0] : "New Tab"),
-        url: tabInfo.url || url,
-        canGoBack: tabInfo.canGoBack ?? false,
-        canGoForward: tabInfo.canGoForward ?? false,
-        history: [url],
-        historyIndex: 0,
-        isLoading: !!url,
-        isSecure: tabInfo.isSecure ?? (url.startsWith("https") || url === ""),
-      };
-      setTabs((prev) => [...prev, newTab]);
-      setActiveTabId(newId);
-    });
-  }, []);
+  const createTab = useCallback(
+    (url = "", title = "New Tab", profileId?: string) => {
+      const targetProfile = profileId || activeProfileId || "personal";
+      getBrowserAdapter().createTab(url, title, targetProfile).then((tabInfo) => {
+        const newId = tabInfo.id || `tab-${++tabIdCounter}`;
+        const newTab: TabState = {
+          id: newId,
+          title: tabInfo.title || (url ? url.replace(/^https?:\/\//, "").split("/")[0] : "New Tab"),
+          url: tabInfo.url || url,
+          canGoBack: tabInfo.canGoBack ?? false,
+          canGoForward: tabInfo.canGoForward ?? false,
+          history: [url],
+          historyIndex: 0,
+          isLoading: !!url,
+          isSecure: tabInfo.isSecure ?? (url.startsWith("https") || url === ""),
+          profile_id: tabInfo.profile_id || targetProfile,
+        };
+        setTabs((prev) => [...prev, newTab]);
+        setActiveTabId(newId);
+      });
+    },
+    [activeProfileId]
+  );
+
+  const openTabInProfile = useCallback(
+    (profileId: string, url = "") => {
+      createTab(url, "New Tab", profileId);
+    },
+    [createTab]
+  );
+
+  const requestSessionEscalation = useCallback(
+    async (tabId: string, targetProfileId: string, reason: string): Promise<boolean> => {
+      setEscalationModal({
+        isOpen: true,
+        tabId,
+        targetProfileId,
+        reason,
+      });
+      return false;
+    },
+    []
+  );
 
   const closeTab = useCallback((id: string) => {
     getBrowserAdapter().closeTab(id).then(() => {
@@ -440,6 +836,7 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
               historyIndex: 0,
               isLoading: false,
               isSecure: true,
+              profile_id: activeProfileId || "personal",
             },
           ];
         }
@@ -453,7 +850,7 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
       }
     });
-  }, [activeTabId]);
+  }, [activeTabId, activeProfileId]);
 
   const switchTab = useCallback((id: string) => {
     getBrowserAdapter().switchTab(id).then(() => {
@@ -486,7 +883,7 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const host = cleanUrl.replace(/^https?:\/\//, "").split("/")[0];
 
-    // Simulate loading progress
+    // Optimistically update tab UI state
     setTabs((prev) =>
       prev.map((t) =>
         t.id === activeTabId
@@ -503,61 +900,79 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
       )
     );
 
-    // Simulate page load completion after 450ms
-    setTimeout(() => {
+    // Dispatch real navigation to host / CEF adapter
+    getBrowserAdapter().navigate(activeTabId, cleanUrl).catch((err) => {
+      console.error("Navigation failed:", err);
       setTabs((prev) =>
-        prev.map((t) =>
-          t.id === activeTabId ? { ...t, isLoading: false } : t
-        )
+        prev.map((t) => (t.id === activeTabId ? { ...t, isLoading: false } : t))
       );
-      // Log navigation event in DevTools console
-      setConsoleLogs((prev) => [
-        ...prev,
-        {
-          id: `log-${Date.now()}`,
-          level: "info",
-          message: `Navigated to ${cleanUrl} (HTTP 200 OK)`,
-          source: "network::http_loader",
-          timestamp: new Date().toLocaleTimeString(),
-        },
-      ]);
-    }, 450);
+    });
+
+    if (!isTauriEnvironment()) {
+      setTimeout(() => {
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabId ? { ...t, isLoading: false } : t
+          )
+        );
+        setConsoleLogs((prev) => [
+          ...prev,
+          {
+            id: `log-${Date.now()}`,
+            level: "info",
+            message: `Navigated to ${cleanUrl} (HTTP 200 OK)`,
+            source: "network::http_loader",
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+      }, 450);
+    }
   }, [activeTabId]);
 
   const goBack = useCallback(() => {
-    setTabs((prev) =>
-      prev.map((t) => {
-        if (t.id !== activeTabId || t.historyIndex <= 0) return t;
-        const nextIdx = t.historyIndex - 1;
-        const prevUrl = t.history[nextIdx];
-        return {
-          ...t,
-          historyIndex: nextIdx,
-          url: prevUrl,
-          title: prevUrl ? prevUrl.replace(/^https?:\/\//, "").split("/")[0] : "New Tab",
-          canGoBack: nextIdx > 0,
-          canGoForward: true,
-        };
-      })
-    );
+    if (!isTauriEnvironment()) {
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== activeTabId || t.historyIndex <= 0) return t;
+          const nextIdx = t.historyIndex - 1;
+          const prevUrl = t.history[nextIdx];
+          return {
+            ...t,
+            historyIndex: nextIdx,
+            url: prevUrl,
+            title: prevUrl ? prevUrl.replace(/^https?:\/\//, "").split("/")[0] : "New Tab",
+            canGoBack: nextIdx > 0,
+            canGoForward: true,
+          };
+        })
+      );
+    }
+    getBrowserAdapter().goBack(activeTabId).catch((err) => {
+      console.error("goBack error:", err);
+    });
   }, [activeTabId]);
 
   const goForward = useCallback(() => {
-    setTabs((prev) =>
-      prev.map((t) => {
-        if (t.id !== activeTabId || t.historyIndex >= t.history.length - 1) return t;
-        const nextIdx = t.historyIndex + 1;
-        const nextUrl = t.history[nextIdx];
-        return {
-          ...t,
-          historyIndex: nextIdx,
-          url: nextUrl,
-          title: nextUrl ? nextUrl.replace(/^https?:\/\//, "").split("/")[0] : "New Tab",
-          canGoBack: true,
-          canGoForward: nextIdx < t.history.length - 1,
-        };
-      })
-    );
+    if (!isTauriEnvironment()) {
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.id !== activeTabId || t.historyIndex >= t.history.length - 1) return t;
+          const nextIdx = t.historyIndex + 1;
+          const nextUrl = t.history[nextIdx];
+          return {
+            ...t,
+            historyIndex: nextIdx,
+            url: nextUrl,
+            title: nextUrl ? nextUrl.replace(/^https?:\/\//, "").split("/")[0] : "New Tab",
+            canGoBack: true,
+            canGoForward: nextIdx < t.history.length - 1,
+          };
+        })
+      );
+    }
+    getBrowserAdapter().goForward(activeTabId).catch((err) => {
+      console.error("goForward error:", err);
+    });
   }, [activeTabId]);
 
   const refresh = useCallback(() => {
@@ -565,11 +980,19 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, isLoading: true } : t))
     );
-    setTimeout(() => {
+    getBrowserAdapter().refresh(activeTabId).catch((err) => {
+      console.error("refresh error:", err);
       setTabs((prev) =>
         prev.map((t) => (t.id === activeTabId ? { ...t, isLoading: false } : t))
       );
-    }, 500);
+    });
+    if (!isTauriEnvironment()) {
+      setTimeout(() => {
+        setTabs((prev) =>
+          prev.map((t) => (t.id === activeTabId ? { ...t, isLoading: false } : t))
+        );
+      }, 500);
+    }
   }, [activeTab, activeTabId]);
 
   // ─── Bookmarks ────────────────────────────────────────────────────
@@ -665,6 +1088,20 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
         goForward,
         refresh,
 
+        // Profiles & Permission State (Phase 7 - INV-06, INV-10)
+        profiles,
+        activeProfileId,
+        activeProfile,
+        profileSwitcherOpen,
+        setProfileSwitcherOpen,
+        escalationModal,
+        setEscalationModal,
+        createProfile,
+        deleteProfile,
+        switchProfile,
+        openTabInProfile,
+        requestSessionEscalation,
+
         activeTool,
         setActiveTool,
         aiOpen,
@@ -690,8 +1127,10 @@ export const BrowserProvider: React.FC<{ children: React.ReactNode }> = ({ child
         clearNetworkRequests,
 
         activeDomTree,
+        isLoadingDom,
         selectedDomNodeId,
         setSelectedDomNodeId,
+        refreshDomTree,
 
         accentTheme,
         setAccentTheme,

@@ -1,6 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import "./StoragePanel.css";
-import { Plus, Trash2, Search } from "lucide-react";
+import { Plus, Trash2, Search, RefreshCw } from "lucide-react";
+import { useBrowser } from "../../context/BrowserContext";
+import { isTauriEnvironment } from "../../adapters/BrowserAdapter";
+import { getCookies, getLocalStorage, getSessionStorage, evalJs } from "../../ipc/client";
 
 interface StorageItem {
   key: string;
@@ -8,8 +11,10 @@ interface StorageItem {
 }
 
 export const StoragePanel: React.FC = () => {
+  const { activeTabId } = useBrowser();
   const [activeTab, setActiveTab] = useState<"local" | "session" | "cookies">("local");
   const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const [items, setItems] = useState<StorageItem[]>([
     { key: "kage_theme", value: '"liquid-glass-peach"' },
@@ -23,17 +28,119 @@ export const StoragePanel: React.FC = () => {
   const [newVal, setNewVal] = useState("");
   const [showAdd, setShowAdd] = useState(false);
 
-  const handleAdd = (e: React.FormEvent) => {
+  const fetchStorage = useCallback(async () => {
+    if (!isTauriEnvironment() || !activeTabId) return;
+    setIsLoading(true);
+    try {
+      if (activeTab === "cookies") {
+        const res: any = await getCookies(activeTabId);
+        if (res && Array.isArray(res.cookies)) {
+          const mapped: StorageItem[] = res.cookies.map((c: any) => ({
+            key: c.name || "cookie",
+            value: `${c.value} [${c.domain || ""}${c.path || ""}]`,
+          }));
+          setItems(mapped);
+        } else {
+          setItems([]);
+        }
+      } else if (activeTab === "local") {
+        const res: any = await getLocalStorage(activeTabId);
+        if (res && res.items && typeof res.items === "object") {
+          const mapped: StorageItem[] = Object.entries(res.items).map(([k, v]) => ({
+            key: k,
+            value: String(v),
+          }));
+          setItems(mapped);
+        } else {
+          setItems([]);
+        }
+      } else if (activeTab === "session") {
+        const res: any = await getSessionStorage(activeTabId);
+        if (res && res.items && typeof res.items === "object") {
+          const mapped: StorageItem[] = Object.entries(res.items).map(([k, v]) => ({
+            key: k,
+            value: String(v),
+          }));
+          setItems(mapped);
+        } else {
+          setItems([]);
+        }
+      }
+    } catch (err) {
+      console.warn("Storage fetch error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeTab, activeTabId]);
+
+  useEffect(() => {
+    if (isTauriEnvironment() && activeTabId) {
+      void fetchStorage();
+    }
+  }, [fetchStorage, activeTabId]);
+
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKey.trim()) return;
-    setItems((prev) => [...prev, { key: newKey.trim(), value: newVal.trim() }]);
+    const k = newKey.trim();
+    const v = newVal.trim();
+
+    if (isTauriEnvironment() && activeTabId) {
+      try {
+        if (activeTab === "local") {
+          await evalJs(`localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`, activeTabId);
+        } else if (activeTab === "session") {
+          await evalJs(`sessionStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`, activeTabId);
+        } else if (activeTab === "cookies") {
+          await evalJs(`document.cookie = ${JSON.stringify(`${encodeURIComponent(k)}=${encodeURIComponent(v)}; path=/`)}`, activeTabId);
+        }
+        await fetchStorage();
+      } catch (err) {
+        console.warn("Failed to set storage item:", err);
+      }
+    } else {
+      setItems((prev) => [...prev, { key: k, value: v }]);
+    }
+
     setNewKey("");
     setNewVal("");
     setShowAdd(false);
   };
 
-  const handleDelete = (keyToDelete: string) => {
-    setItems((prev) => prev.filter((i) => i.key !== keyToDelete));
+  const handleDelete = async (keyToDelete: string) => {
+    if (isTauriEnvironment() && activeTabId) {
+      try {
+        if (activeTab === "local") {
+          await evalJs(`localStorage.removeItem(${JSON.stringify(keyToDelete)})`, activeTabId);
+        } else if (activeTab === "session") {
+          await evalJs(`sessionStorage.removeItem(${JSON.stringify(keyToDelete)})`, activeTabId);
+        } else if (activeTab === "cookies") {
+          await evalJs(`document.cookie = ${JSON.stringify(`${encodeURIComponent(keyToDelete)}=; Max-Age=0; path=/`)}`, activeTabId);
+        }
+        await fetchStorage();
+      } catch (err) {
+        console.warn("Failed to delete storage item:", err);
+      }
+    } else {
+      setItems((prev) => prev.filter((i) => i.key !== keyToDelete));
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (isTauriEnvironment() && activeTabId) {
+      try {
+        if (activeTab === "local") {
+          await evalJs("localStorage.clear()", activeTabId);
+        } else if (activeTab === "session") {
+          await evalJs("sessionStorage.clear()", activeTabId);
+        }
+        await fetchStorage();
+      } catch (err) {
+        console.warn("Failed to clear storage:", err);
+      }
+    } else {
+      setItems([]);
+    }
   };
 
   const filteredItems = items.filter(
@@ -71,6 +178,14 @@ export const StoragePanel: React.FC = () => {
           </div>
           <button
             className="storage-tool-btn"
+            onClick={fetchStorage}
+            title="Refresh storage"
+            aria-label="Refresh storage"
+          >
+            <RefreshCw size={13} strokeWidth={2} className={isLoading ? "storage-refresh--spinning" : ""} />
+          </button>
+          <button
+            className="storage-tool-btn"
             onClick={() => setShowAdd(true)}
             title="Add Item"
             aria-label="Add Item"
@@ -79,7 +194,7 @@ export const StoragePanel: React.FC = () => {
           </button>
           <button
             className="storage-tool-btn"
-            onClick={() => setItems([])}
+            onClick={handleClearAll}
             title="Clear all"
             aria-label="Clear all"
           >
@@ -128,22 +243,30 @@ export const StoragePanel: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredItems.map((item) => (
-              <tr key={item.key} className="storage-row">
-                <td className="storage-key">{item.key}</td>
-                <td className="storage-val">{item.value}</td>
-                <td>
-                  <button
-                    className="storage-del-btn"
-                    onClick={() => handleDelete(item.key)}
-                    title="Delete item"
-                    aria-label={`Delete ${item.key}`}
-                  >
-                    <Trash2 size={12} strokeWidth={1.8} />
-                  </button>
+            {filteredItems.length === 0 ? (
+              <tr className="storage-row storage-row--empty">
+                <td colSpan={3} style={{ textAlign: "center", color: "rgba(249, 219, 189, 0.4)", padding: "24px 0" }}>
+                  {isLoading ? "Loading storage items..." : "No items found in storage"}
                 </td>
               </tr>
-            ))}
+            ) : (
+              filteredItems.map((item) => (
+                <tr key={item.key} className="storage-row">
+                  <td className="storage-key">{item.key}</td>
+                  <td className="storage-val">{item.value}</td>
+                  <td>
+                    <button
+                      className="storage-del-btn"
+                      onClick={() => handleDelete(item.key)}
+                      title="Delete item"
+                      aria-label={`Delete ${item.key}`}
+                    >
+                      <Trash2 size={12} strokeWidth={1.8} />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

@@ -354,24 +354,27 @@ impl CdpBroker {
                     match msg {
                         Ok(Message::Text(text)) => {
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                                // INV-06: Sanitize all Chromium messages before any downstream delivery
-                                let sanitized_val = sanitizer.sanitize(val);
-                                let sanitized_text = serde_json::to_string(&sanitized_val).unwrap_or(text);
-
-                                if sanitized_val.get("id").is_none() && sanitized_val.get("method").is_some() {
-                                    if let Some(method) = sanitized_val["method"].as_str() {
+                                // For asynchronous Chromium events: sanitize before fanout to event broadcast subscribers and client websocket
+                                if val.get("id").is_none() && val.get("method").is_some() {
+                                    if let Some(method) = val["method"].as_str() {
                                         println!("[CDP BROKER] Intercepted Chromium event: {}", method);
                                     }
-                                    if let Ok(evt) = serde_json::from_value::<CdpEvent>(sanitized_val) {
+                                    let sanitized_val = sanitizer.sanitize(val);
+                                    if let Ok(evt) = serde_json::from_value::<CdpEvent>(sanitized_val.clone()) {
                                         let _ = event_tx_clone.send(evt);
                                     }
-                                }
-                                if client_write.send(Message::Text(sanitized_text)).await.is_err() {
-                                    break;
+                                    let sanitized_text = serde_json::to_string(&sanitized_val).unwrap_or(text);
+                                    if client_write.send(Message::Text(sanitized_text)).await.is_err() {
+                                        break;
+                                    }
+                                } else {
+                                    // Direct command responses (e.g. Runtime.evaluate) are delivered raw to the authenticated host client (ToolBus handles observation boundary sanitization)
+                                    if client_write.send(Message::Text(text)).await.is_err() {
+                                        break;
+                                    }
                                 }
                             } else {
-                                let sanitized_str = sanitizer.sanitize_string(&text);
-                                if client_write.send(Message::Text(sanitized_str)).await.is_err() {
+                                if client_write.send(Message::Text(text)).await.is_err() {
                                     break;
                                 }
                             }
@@ -473,6 +476,87 @@ impl CdpBroker {
             return CdpResponse {
                 id: req.id,
                 result: Some(serde_json::json!({ "sessionId": session_id })),
+                error: None,
+                session_id: req.session_id,
+            };
+        }
+
+        // Runtime evaluation simulation (for testing loopback without live Chromium)
+        if req.method == "Runtime.evaluate" {
+            let expression = req.params.get("expression").and_then(|e| e.as_str()).unwrap_or("");
+            if expression == "trigger_stale_session_test" && req.session_id.as_deref() == Some("stale_session_seed") {
+                return CdpResponse {
+                    id: req.id,
+                    result: None,
+                    error: Some(CdpResponseError {
+                        code: -32000,
+                        message: "No session with given id".to_string(),
+                        data: None,
+                    }),
+                    session_id: req.session_id,
+                };
+            }
+            if expression.contains("throw") {
+                return CdpResponse {
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "result": { "type": "object", "subtype": "error", "description": "Error: KAGE_TEST_ERROR" },
+                        "exceptionDetails": {
+                            "text": "Uncaught Error: KAGE_TEST_ERROR",
+                            "lineNumber": 1,
+                            "columnNumber": 1,
+                            "exception": { "type": "object", "subtype": "error", "description": "Error: KAGE_TEST_ERROR" }
+                        }
+                    })),
+                    error: None,
+                    session_id: req.session_id,
+                };
+            }
+            if expression == "1 + 1" {
+                return CdpResponse {
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "result": { "type": "number", "value": 2, "description": "2" }
+                    })),
+                    error: None,
+                    session_id: req.session_id,
+                };
+            }
+            if expression == "Promise.resolve(42)" {
+                return CdpResponse {
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "result": { "type": "number", "value": 42, "description": "42" }
+                    })),
+                    error: None,
+                    session_id: req.session_id,
+                };
+            }
+            if expression == "document.title" {
+                return CdpResponse {
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "result": { "type": "string", "value": "Example Domain" }
+                    })),
+                    error: None,
+                    session_id: req.session_id,
+                };
+            }
+            if expression.contains("secret") || expression.contains("token") {
+                return CdpResponse {
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "result": { "type": "string", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.super_secret_jwt" }
+                    })),
+                    error: None,
+                    session_id: req.session_id,
+                };
+            }
+            return CdpResponse {
+                id: req.id,
+                result: Some(serde_json::json!({
+                    "result": { "type": "string", "value": expression }
+                })),
                 error: None,
                 session_id: req.session_id,
             };

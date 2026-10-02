@@ -1,0 +1,22 @@
+[package]
+name = "kage-client"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "KAGE Windows Client Dynamic Library (kage_client.dll) exporting RunWinMain for CEF bootstrap architecture"
+
+[lib]
+name = "kage_client"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cef = { workspace = true }
+kage-core = { path = "../kage-core" }
+kage-engine = { path = "../kage-engine" }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+] }

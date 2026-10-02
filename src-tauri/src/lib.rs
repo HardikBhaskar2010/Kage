@@ -10,13 +10,18 @@
 //! 4. On window close, CEF teardown follows the engine state machine
 //!    (`CloseRequested → BrowserClosing → BrowserClosed → CefShutdownPending → Shutdown`).
 
+pub mod cdp_session;
 pub mod ipc;
+pub mod tools;
 
 use std::sync::Arc;
 use kage_core::ToolBus;
 use kage_cdp::CdpBroker;
 use kage_storage::AuditDb;
 use kage_engine::{CefRuntime, ChromeLayoutConfig, NativeSurfaceManager, RuntimeConfig};
+
+#[derive(Clone)]
+pub struct HostWindowHandle(pub Arc<std::sync::atomic::AtomicIsize>);
 
 /// Initialise and run the Tauri application.
 pub fn run() {
@@ -136,26 +141,57 @@ pub fn run() {
             .with_audit_sink(audit_db.clone()),
     );
     let cdp_broker = Arc::new(CdpBroker::new());
+    let cdp_session_manager = Arc::new(cdp_session::CdpSessionManager::new(cdp_broker.clone()));
 
     // Phase 3: Browser Control Plane (Tabs, Profiles, Event Bus)
     let profile_manager = Arc::new(kage_browser::ProfileManager::new());
     let event_bus = kage_browser::BrowserEventBus::new(64);
     let tab_manager = Arc::new(kage_browser::TabManager::new(profile_manager, event_bus));
 
-    tracing::info!("ToolBus, TabManager, and ProfileManager initialized");
+    // Connect CefTabBridge to observe native CEF lifecycle and route events to TabManager
+    let bridge = kage_browser::CefTabBridge::new(tab_manager.clone());
+    cef_runtime.add_observer(bridge.clone());
+
+    // Register governed Developer Plane tools on ToolBus (INV-02)
+    let reg_bus = tool_bus.clone();
+    let reg_tabs = tab_manager.clone();
+    let reg_cdp = cdp_session_manager.clone();
+    tauri::async_runtime::block_on(async move {
+        tools::register_developer_tools(&reg_bus, reg_tabs, reg_cdp).await;
+    });
+
+    let host_hwnd = HostWindowHandle(Arc::new(std::sync::atomic::AtomicIsize::new(0)));
+
+    tracing::info!("ToolBus, TabManager, CefTabBridge, ProfileManager, and Developer Intelligence Tools registered");
 
     tauri::Builder::default()
         .setup({
             let cef_runtime = cef_runtime.clone();
             let surface_manager = surface_manager.clone();
             let tab_manager = tab_manager.clone();
+            let bridge = bridge.clone();
+            let host_hwnd = host_hwnd.clone();
             move |app| {
                 use tauri::Manager;
                 let window = app.get_webview_window("main").expect("main window must exist");
+
+                // Forward real browser events to React shell
+                let app_handle = app.handle().clone();
+                let mut event_rx = tab_manager.event_bus().subscribe();
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Emitter;
+                    while let Ok(event) = event_rx.recv().await {
+                        if let Err(e) = app_handle.emit("kage:browser:event", &event) {
+                            tracing::error!("Failed to emit kage:browser:event to UI: {e}");
+                        }
+                    }
+                });
+
                 #[cfg(windows)]
                 {
                     let hwnd = window.hwnd().expect("HWND must exist");
                     let hwnd_isize = hwnd.0 as isize;
+                    host_hwnd.0.store(hwnd_isize, std::sync::atomic::Ordering::SeqCst);
                     tracing::info!("[Tauri setup] Main window HWND: {} ({:?})", hwnd_isize, hwnd);
 
                     let scale_factor = window.scale_factor().unwrap_or(1.0);
@@ -179,18 +215,21 @@ pub fn run() {
                         initial_url
                     );
 
+                    // Phase 3: Register initial tab in TabManager, register with bridge, and attach child surface
+                    let tm = tab_manager.clone();
+                    let br = bridge.clone();
+                    tauri::async_runtime::block_on(async move {
+                        if let Ok(tab_id) = tm.create_tab(kage_browser::ProfileId::personal(), initial_url).await {
+                            let surface_id = kage_browser::BrowserSurfaceId::new();
+                            let _ = tm.bind_browser_surface(tab_id, surface_id).await;
+                            br.register_pending_tab(tab_id, &tm);
+                            tracing::info!("[Tauri setup] Initial tab registered in TabManager: {tab_id}");
+                        }
+                    });
+
                     match cef_runtime.create_browser(hwnd_isize, &layout.cef_content_rect, initial_url) {
                         Ok(()) => {
                             tracing::info!("[Tauri setup] Child CEF browser creation dispatched successfully (CEF-06C)");
-                            // Phase 3: Register initial tab in TabManager and attach child surface
-                            let tm = tab_manager.clone();
-                            tauri::async_runtime::block_on(async move {
-                                if let Ok(tab_id) = tm.create_tab(kage_browser::ProfileId::personal(), initial_url).await {
-                                    let surface_id = kage_browser::BrowserSurfaceId::new();
-                                    let _ = tm.bind_browser_surface(tab_id, surface_id).await;
-                                    tracing::info!("[Tauri setup] Initial tab registered in TabManager: {tab_id}");
-                                }
-                            });
                         }
                         Err(e) => {
                             tracing::error!("[Tauri setup] Failed to create child CEF browser: {e}");
@@ -216,6 +255,8 @@ pub fn run() {
                                 "[WindowEvent::Resized] CEF content rect: {:?}",
                                 layout.cef_content_rect
                             );
+                            #[cfg(windows)]
+                            cef_runtime.resize_all_browsers(&layout.cef_content_rect);
                         }
                     }
                     tauri::WindowEvent::CloseRequested { .. } => {
@@ -235,10 +276,13 @@ pub fn run() {
         })
         .manage(tool_bus)
         .manage(cdp_broker)
+        .manage(cdp_session_manager)
         .manage(audit_db)
         .manage(cef_runtime)              // CefRuntime: lifecycle state machine
         .manage(surface_manager)          // NativeSurfaceManager: physical HWND bounds authority
         .manage(tab_manager)              // TabManager: tab lifecycle coordinator (Phase 3)
+        .manage(bridge)                   // CefTabBridge: native CEF observer bridge
+        .manage(host_hwnd)                // HostWindowHandle: main window native HWND
         .invoke_handler(tauri::generate_handler![
             ipc::tool_dispatch,
             ipc::get_cdp_connection,
@@ -259,6 +303,13 @@ pub fn run() {
             ipc::verify_audit_chain,
             ipc::sync_viewport_bounds,
             ipc::get_engine_state,
+            ipc::list_profiles,
+            ipc::create_profile,
+            ipc::delete_profile,
+            ipc::get_active_profile,
+            ipc::query_permission,
+            ipc::set_permission,
+            ipc::escalate_session,
         ])
         .run(tauri::generate_context!())
         .expect("KAGE Tauri application failed to start");

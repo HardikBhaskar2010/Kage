@@ -202,6 +202,11 @@ impl NavigationController {
         }
     }
 
+    /// Lookup TabId associated with a CEF browser instance identifier.
+    pub async fn tab_id_for_browser(&self, cef_browser_id: i32) -> Option<TabId> {
+        self.browser_to_tab.read().await.get(&cef_browser_id).copied()
+    }
+
     /// Record a CEF request identifier discovered via GetResourceRequestHandler.
     pub async fn record_cef_request(&self, tab_id: TabId, cef_request_id: u64, url: &str) {
         if let Some(corr) = self.correlations.write().await.get_mut(&tab_id) {

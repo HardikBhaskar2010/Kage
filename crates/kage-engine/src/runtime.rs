@@ -30,6 +30,10 @@ pub struct RuntimeConfig {
     pub persist_session_cookies: bool,
     /// Loopback port for Chrome DevTools Protocol remote debugging (0 = disabled).
     pub remote_debugging_port: u16,
+    /// Opaque sandbox_info pointer received from CEF bootstrap.exe / KAGE.exe via RunWinMain.
+    /// Stored as a raw pointer address (usize) to avoid FFI lifetime issues across async boundaries.
+    /// Passed into `cef::initialize` to activate the full cef_sandbox.lib constraint chain (CEF-03b-D).
+    pub sandbox_info: Option<usize>,
 }
 
 impl Default for RuntimeConfig {
@@ -50,6 +54,8 @@ impl Default for RuntimeConfig {
             multi_threaded_message_loop: true,
             persist_session_cookies: true,
             remote_debugging_port: 0,
+            // Default: no sandbox_info pointer (will be supplied by kage_client RunWinMain in release).
+            sandbox_info: None,
         }
     }
 }
@@ -76,12 +82,37 @@ pub enum CefEngineState {
 
 use cef::*;
 
+/// Observer for Chromium Embedded Framework lifecycle and navigation events.
+pub trait CefLifecycleObserver: Send + Sync + 'static {
+    fn on_after_created(&self, _browser_id: i32) {}
+    fn on_before_close(&self, _browser_id: i32) {}
+    fn on_loading_state_change(
+        &self,
+        _browser_id: i32,
+        _is_loading: bool,
+        _can_go_back: bool,
+        _can_go_forward: bool,
+    ) {}
+    fn on_load_start(&self, _browser_id: i32, _url: &str, _is_main: bool) {}
+    fn on_load_end(&self, _browser_id: i32, _url: &str, _http_status: i32, _is_main: bool) {}
+    fn on_load_error(
+        &self,
+        _browser_id: i32,
+        _error_code: i32,
+        _error_text: &str,
+        _failed_url: &str,
+    ) {}
+    fn on_title_change(&self, _browser_id: i32, _title: &str) {}
+    fn on_render_process_terminated(&self, _browser_id: i32, _status: i32, _error_code: i32) {}
+}
+
 wrap_life_span_handler! {
     struct KageLifeSpanHandler {
         active_browsers: Arc<AtomicUsize>,
         browser_hosts: Arc<std::sync::Mutex<HashMap<i32, BrowserHost>>>,
         last_browser_id: Arc<AtomicI32>,
         created_browser_ids: Arc<std::sync::Mutex<Vec<i32>>>,
+        observers: Arc<std::sync::RwLock<Vec<Arc<dyn CefLifecycleObserver>>>>,
     }
 
     impl LifeSpanHandler {
@@ -99,6 +130,11 @@ wrap_life_span_handler! {
                         lock.insert(id, host);
                     }
                 }
+                if let Ok(observers) = self.observers.read() {
+                    for obs in observers.iter() {
+                        obs.on_after_created(id);
+                    }
+                }
             }
         }
 
@@ -109,6 +145,11 @@ wrap_life_span_handler! {
                 lock.remove(&b_id);
             }
             println!("[KageLifeSpanHandler] on_before_close triggered (browser_id={}, prev_count={}, new_count={})", b_id, prev, prev - 1);
+            if let Ok(observers) = self.observers.read() {
+                for obs in observers.iter() {
+                    obs.on_before_close(b_id);
+                }
+            }
         }
     }
 }
@@ -126,6 +167,7 @@ wrap_load_handler! {
         last_error_text: Arc<std::sync::RwLock<Option<String>>>,
         last_browser_id_loaded: Arc<AtomicI32>,
         loaded_browsers: Arc<std::sync::RwLock<HashSet<i32>>>,
+        observers: Arc<std::sync::RwLock<Vec<Arc<dyn CefLifecycleObserver>>>>,
     }
 
     impl LoadHandler {
@@ -133,12 +175,17 @@ wrap_load_handler! {
             &self,
             browser: Option<&mut Browser>,
             is_loading: ::std::os::raw::c_int,
-            _can_go_back: ::std::os::raw::c_int,
-            _can_go_forward: ::std::os::raw::c_int,
+            can_go_back: ::std::os::raw::c_int,
+            can_go_forward: ::std::os::raw::c_int,
         ) {
             let b_id = browser.map(|b| b.identifier()).unwrap_or(0);
             println!("[KageLoadHandler] on_loading_state_change: browser_id={}, is_loading={}", b_id, is_loading);
             self.is_loading.store(is_loading != 0, Ordering::SeqCst);
+            if let Ok(observers) = self.observers.read() {
+                for obs in observers.iter() {
+                    obs.on_loading_state_change(b_id, is_loading != 0, can_go_back != 0, can_go_forward != 0);
+                }
+            }
         }
 
         fn on_load_start(
@@ -150,11 +197,17 @@ wrap_load_handler! {
             let b_id = browser.map(|b| b.identifier()).unwrap_or(0);
             self.load_started.store(true, Ordering::SeqCst);
             if let Some(f) = frame {
+                let is_main = f.is_main() != 0;
                 let url_str = CefStringUtf16::from(&f.url()).to_string();
                 if let Ok(mut lock) = self.load_start_url.write() {
                     *lock = Some(url_str.clone());
                 }
                 println!("[KageLoadHandler] on_load_start: browser_id={}, url={}", b_id, url_str);
+                if let Ok(observers) = self.observers.read() {
+                    for obs in observers.iter() {
+                        obs.on_load_start(b_id, &url_str, is_main);
+                    }
+                }
             }
         }
 
@@ -172,6 +225,7 @@ wrap_load_handler! {
             }
             self.page_loaded.store(true, Ordering::SeqCst);
             if let Some(f) = frame {
+                let is_main = f.is_main() != 0;
                 let url_str = CefStringUtf16::from(&f.url()).to_string();
                 if let Ok(mut lock) = self.last_loaded_url.write() {
                     *lock = Some(url_str.clone());
@@ -180,6 +234,11 @@ wrap_load_handler! {
                 let js_code = CefString::from("document.title = document.title + ' [KAGE_CEF_OK]';");
                 let script_url = CefString::from("about:blank");
                 f.execute_java_script(Some(&js_code), Some(&script_url), 0);
+                if let Ok(observers) = self.observers.read() {
+                    for obs in observers.iter() {
+                        obs.on_load_end(b_id, &url_str, http_status_code as i32, is_main);
+                    }
+                }
             }
         }
 
@@ -201,6 +260,11 @@ wrap_load_handler! {
                 *lock = Some(text.clone());
             }
             println!("[KageLoadHandler] on_load_error: browser_id={}, error_code={}, text={}, url={}", b_id, code_i32, text, url);
+            if let Ok(observers) = self.observers.read() {
+                for obs in observers.iter() {
+                    obs.on_load_error(b_id, code_i32, &text, &url);
+                }
+            }
         }
     }
 }
@@ -217,6 +281,7 @@ wrap_request_handler! {
         last_user_gesture: Arc<AtomicBool>,
         last_is_redirect: Arc<AtomicBool>,
         last_transition_type: Arc<AtomicU32>,
+        observers: Arc<std::sync::RwLock<Vec<Arc<dyn CefLifecycleObserver>>>>,
     }
 
     impl RequestHandler {
@@ -293,6 +358,11 @@ wrap_request_handler! {
             self.termination_error_code.store(error_code as i32, Ordering::SeqCst);
             self.last_terminated_browser_id.store(browser_id, Ordering::SeqCst);
             self.renderer_terminated.store(true, Ordering::SeqCst);
+            if let Ok(observers) = self.observers.read() {
+                for obs in observers.iter() {
+                    obs.on_render_process_terminated(browser_id, status_i32, error_code as i32);
+                }
+            }
         }
     }
 }
@@ -301,6 +371,7 @@ wrap_display_handler! {
     struct KageDisplayHandler {
         last_title: Arc<std::sync::RwLock<Option<String>>>,
         titles_by_browser: Arc<std::sync::RwLock<HashMap<i32, String>>>,
+        observers: Arc<std::sync::RwLock<Vec<Arc<dyn CefLifecycleObserver>>>>,
     }
 
     impl DisplayHandler {
@@ -317,7 +388,12 @@ wrap_display_handler! {
                     *lock = Some(title_str.clone());
                 }
                 if let Ok(mut map) = self.titles_by_browser.write() {
-                    map.insert(b_id, title_str);
+                    map.insert(b_id, title_str.clone());
+                }
+                if let Ok(observers) = self.observers.read() {
+                    for obs in observers.iter() {
+                        obs.on_title_change(b_id, &title_str);
+                    }
                 }
             }
         }
@@ -414,6 +490,7 @@ pub struct CefRuntime {
     last_title: Arc<std::sync::RwLock<Option<String>>>,
     titles_by_browser: Arc<std::sync::RwLock<HashMap<i32, String>>>,
     loaded_browsers: Arc<std::sync::RwLock<HashSet<i32>>>,
+    observers: Arc<std::sync::RwLock<Vec<Arc<dyn CefLifecycleObserver>>>>,
     config: RuntimeConfig,
 }
 
@@ -450,6 +527,7 @@ impl CefRuntime {
             last_title: Arc::new(std::sync::RwLock::new(None)),
             titles_by_browser: Arc::new(std::sync::RwLock::new(HashMap::new())),
             loaded_browsers: Arc::new(std::sync::RwLock::new(HashSet::new())),
+            observers: Arc::new(std::sync::RwLock::new(Vec::new())),
             config,
         }
     }
@@ -664,6 +742,123 @@ impl CefRuntime {
         Err(EngineError::Lifecycle(format!("No active browser host found with identifier {browser_id}")))
     }
 
+    /// Register a lifecycle observer to receive CEF engine and navigation callbacks.
+    pub fn add_observer(&self, observer: Arc<dyn CefLifecycleObserver>) {
+        if let Ok(mut lock) = self.observers.write() {
+            lock.push(observer);
+        }
+    }
+
+    /// Traverse backward in session history for a specific browser instance.
+    pub fn go_back_by_browser_id(&self, browser_id: i32) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                if let Some(browser) = host.browser() {
+                    browser.go_back();
+                    return Ok(());
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
+    /// Traverse forward in session history for a specific browser instance.
+    pub fn go_forward_by_browser_id(&self, browser_id: i32) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                if let Some(browser) = host.browser() {
+                    browser.go_forward();
+                    return Ok(());
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
+    /// Reload the page for a specific browser instance.
+    pub fn reload_by_browser_id(&self, browser_id: i32, ignore_cache: bool) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                if let Some(browser) = host.browser() {
+                    if ignore_cache {
+                        browser.reload_ignore_cache();
+                    } else {
+                        browser.reload();
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
+    /// Stop loading ongoing navigation for a specific browser instance.
+    pub fn stop_load_by_browser_id(&self, browser_id: i32) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                if let Some(browser) = host.browser() {
+                    browser.stop_load();
+                    return Ok(());
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
+    /// Get the native HWND handle for a specific browser instance.
+    pub fn get_window_handle_by_browser_id(&self, browser_id: i32) -> Option<isize> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                let hwnd = host.window_handle();
+                return Some(hwnd.0 as isize);
+            }
+        }
+        None
+    }
+
+    /// Resize a specific browser instance's native child HWND.
+    #[cfg(windows)]
+    pub fn resize_browser_by_id(&self, browser_id: i32, rect: &crate::composition::ViewportRect) -> Result<(), EngineError> {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                let hwnd = host.window_handle();
+                unsafe {
+                    return crate::composition::NativeSurfaceManager::set_hwnd_bounds(hwnd.0 as isize, rect);
+                }
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
+    /// Reposition all active CEF child windows to the content rect.
+    #[cfg(windows)]
+    pub fn resize_all_browsers(&self, rect: &crate::composition::ViewportRect) {
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            for host in hosts.values() {
+                let hwnd = host.window_handle();
+                unsafe {
+                    let _ = crate::composition::NativeSurfaceManager::set_hwnd_bounds(hwnd.0 as isize, rect);
+                }
+            }
+        }
+    }
+
+    /// Show or hide a specific browser instance's child HWND.
+    #[cfg(windows)]
+    pub fn set_browser_visible_by_id(&self, browser_id: i32, visible: bool) -> Result<(), EngineError> {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW};
+        if let Ok(hosts) = self.browser_hosts.lock() {
+            if let Some(host) = hosts.get(&browser_id) {
+                let hwnd = host.window_handle();
+                unsafe {
+                    ShowWindow(hwnd.0 as _, if visible { SW_SHOW } else { SW_HIDE });
+                }
+                return Ok(());
+            }
+        }
+        Err(EngineError::Lifecycle(format!("No active browser found with identifier {browser_id}")))
+    }
+
     /// Send a DevTools JSON message directly to a browser instance by ID.
     pub fn send_dev_tools_message(&self, browser_id: i32, message: &[u8]) -> Result<bool, EngineError> {
         if let Ok(hosts) = self.browser_hosts.lock() {
@@ -783,11 +978,20 @@ impl CefRuntime {
         };
 
         let args = cef::args::Args::new();
+        // CEF-03b-D: Pass sandbox_info from bootstrap into cef::initialize to activate
+        // the full cef_sandbox.lib constraint chain for renderer/GPU process tokens.
+        let sandbox_ptr: *mut u8 = if !self.config.no_sandbox {
+            self.config.sandbox_info
+                .map(|addr| addr as *mut u8)
+                .unwrap_or(std::ptr::null_mut())
+        } else {
+            std::ptr::null_mut()
+        };
         let result = cef::initialize(
             Some(args.as_main_args()),
             Some(&settings),
             None,
-            std::ptr::null_mut(),
+            sandbox_ptr,
         );
 
         if result != 1 {
@@ -882,6 +1086,7 @@ impl CefRuntime {
             self.browser_hosts.clone(),
             self.last_browser_id.clone(),
             self.created_browser_ids.clone(),
+            self.observers.clone(),
         );
         let loader = KageLoadHandler::new(
             self.is_loading.clone(),
@@ -895,6 +1100,7 @@ impl CefRuntime {
             self.last_error_text.clone(),
             self.last_browser_id_loaded.clone(),
             self.loaded_browsers.clone(),
+            self.observers.clone(),
         );
         let req_handler = KageRequestHandler::new(
             self.renderer_terminated.clone(),
@@ -907,10 +1113,12 @@ impl CefRuntime {
             self.last_user_gesture.clone(),
             self.last_is_redirect.clone(),
             self.last_transition_type.clone(),
+            self.observers.clone(),
         );
         let display_handler = KageDisplayHandler::new(
             self.last_title.clone(),
             self.titles_by_browser.clone(),
+            self.observers.clone(),
         );
         let mut client = KageBrowserClient::new(
             lifespan,

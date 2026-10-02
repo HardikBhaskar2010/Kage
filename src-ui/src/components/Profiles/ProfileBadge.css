@@ -1,0 +1,56 @@
+.profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border-subtle, rgba(122, 58, 82, 0.4));
+  color: var(--color-text-primary, #FCEDE0);
+  font-family: var(--font-chrome, "Plus Jakarta Sans", sans-serif);
+  font-size: var(--text-xs, 11px);
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 120ms ease-out, background-color 120ms ease-out, border-color 120ms ease-out;
+  outline: none;
+}
+
+.profile-badge:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--color-border-strong, rgba(218, 98, 125, 0.5));
+}
+
+.profile-badge:active {
+  transform: scale(0.97);
+}
+
+.profile-badge:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-accent-primary, #DA627D);
+}
+
+.profile-badge__indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.profile-badge__label {
+  white-space: nowrap;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-badge__tag {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-secondary, #D8B8BA);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

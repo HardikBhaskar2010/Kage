@@ -25,5 +25,15 @@ $env:CXXFLAGS_x86_64_pc_windows_msvc = "--target=x86_64-pc-windows-msvc"
 $env:CC = "$llvm_bin\cl.exe"
 $env:CXX = "$llvm_bin\cl.exe"
 $env:CMAKE_LINKER = "$llvm_bin\lld-link.exe"
+$env:RC = "$llvm_bin\rc.exe"
+$env:MT = "$llvm_bin\mt.exe"
 
 & cargo @args
+$cargoExitCode = $LASTEXITCODE
+
+# Automatic cache governance: prevent target folder from ballooning beyond 20 GB
+if (Test-Path "$PSScriptRoot\clean_cache.ps1") {
+    & "$PSScriptRoot\clean_cache.ps1" -ThresholdGB 20
+}
+
+exit $cargoExitCode

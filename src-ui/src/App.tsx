@@ -35,6 +35,10 @@ import { MicroInspectOverlay } from "./components/MicroInspect/MicroInspectOverl
 import { DownloadsPopover } from "./components/Downloads/DownloadsPopover";
 import { ExtensionsPage } from "./components/Extensions/ExtensionsPage";
 import { SettingsPage } from "./components/Settings/SettingsPage";
+import { ProfileBadge } from "./components/Profiles/ProfileBadge";
+import { ProfileSwitcherModal } from "./components/Profiles/ProfileSwitcherModal";
+import { ProfileEscalationModal } from "./components/Profiles/ProfileEscalationModal";
+import { escalateSession as ipcEscalateSession } from "./ipc/client";
 
 // ─── Sidebar Items with Canonical KAGE Vector Icons (Linear + Filled) ────
 const SIDEBAR_ITEMS: SidebarItem[] = [
@@ -79,6 +83,18 @@ const AppInner: React.FC = () => {
 
     downloadsOpen,
     setDownloadsOpen,
+
+    profiles,
+    activeProfileId,
+    activeProfile,
+    profileSwitcherOpen,
+    setProfileSwitcherOpen,
+    escalationModal,
+    setEscalationModal,
+    createProfile,
+    deleteProfile,
+    switchProfile,
+    openTabInProfile,
   } = useBrowser();
 
   const [inputUrl, setInputUrl] = useState(activeTab?.url || "");
@@ -223,6 +239,11 @@ const AppInner: React.FC = () => {
           onTabClose={closeTab}
           onNewTab={() => createTab()}
         />
+        {/* Profile Pill Badge (Phase 7 - INV-06, INV-10) */}
+        <ProfileBadge
+          profile={activeProfile}
+          onClick={() => setProfileSwitcherOpen(true)}
+        />
         {/* Minimal Windows Window Controls */}
         <div className="app__window-controls" aria-label="Window controls">
           <button type="button" className="wc-btn wc-btn--minimize" aria-label="Minimize">
@@ -301,6 +322,61 @@ const AppInner: React.FC = () => {
 
       {/* Floating Downloads Popover */}
       <DownloadsPopover />
+
+      {/* Profiles Modal (Phase 7 - INV-10) */}
+      <ProfileSwitcherModal
+        isOpen={profileSwitcherOpen}
+        onClose={() => setProfileSwitcherOpen(false)}
+        profiles={profiles}
+        activeProfileId={activeProfile?.id || activeProfileId}
+        onSelectProfile={switchProfile}
+        onOpenTabInProfile={openTabInProfile}
+        onCreateProfile={async (name, kind, color, icon) => {
+          await createProfile(name, kind, color, icon);
+        }}
+        onDeleteProfile={async (id) => {
+          await deleteProfile(id);
+        }}
+      />
+
+      {/* Fail-Closed Session Escalation Modal (Phase 7 - INV-06) */}
+      <ProfileEscalationModal
+        isOpen={!!escalationModal?.isOpen}
+        tabId={escalationModal?.tabId || ""}
+        targetProfileId={escalationModal?.targetProfileId || ""}
+        reason={escalationModal?.reason || ""}
+        onConfirm={async () => {
+          if (escalationModal) {
+            try {
+              await ipcEscalateSession({
+                tab_id: escalationModal.tabId,
+                target_profile_id: escalationModal.targetProfileId,
+                reason: escalationModal.reason,
+                approved: true,
+              });
+            } catch (e) {
+              console.error("Escalation failed:", e);
+            }
+            setEscalationModal(null);
+          }
+          return true;
+        }}
+        onCancel={async () => {
+          if (escalationModal) {
+            try {
+              await ipcEscalateSession({
+                tab_id: escalationModal.tabId,
+                target_profile_id: escalationModal.targetProfileId,
+                reason: escalationModal.reason,
+                approved: false,
+              });
+            } catch (e) {
+              console.warn("Escalation denial logged:", e);
+            }
+            setEscalationModal(null);
+          }
+        }}
+      />
     </div>
   );
 };

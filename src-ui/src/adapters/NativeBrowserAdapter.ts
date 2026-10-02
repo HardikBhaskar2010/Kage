@@ -6,8 +6,8 @@ import type { BrowserAdapter, TabInfo } from "./BrowserAdapter";
  * to the Tauri Rust host process, which drives the native CEF browser windows.
  */
 export class NativeBrowserAdapter implements BrowserAdapter {
-  async createTab(url = "", title = "New Tab"): Promise<TabInfo> {
-    return invoke<TabInfo>("create_tab", { url, title });
+  async createTab(url = "", title = "New Tab", profileId?: string): Promise<TabInfo> {
+    return invoke<TabInfo>("create_tab", { url, title, profile_id: profileId });
   }
 
   async closeTab(tabId: string): Promise<void> {

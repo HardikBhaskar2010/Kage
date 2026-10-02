@@ -21,10 +21,44 @@
   flex-shrink: 0;
 }
 
+.elements-pane-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .elements-hint {
   font-size: 0.62rem;
   font-weight: 400;
   color: var(--color-text-muted);
+}
+
+.elements-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: 1px solid rgba(249, 219, 189, 0.12);
+  border-radius: 4px;
+  color: var(--kage-peach);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.elements-refresh-btn:hover {
+  background: rgba(249, 219, 189, 0.15);
+  border-color: rgba(249, 219, 189, 0.3);
+}
+
+.elements-refresh-btn--spinning svg {
+  animation: elements-spin 800ms linear infinite;
+}
+
+@keyframes elements-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ─── Left Tree Pane ──────────────────────────────────────────────── */

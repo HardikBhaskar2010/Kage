@@ -14,6 +14,7 @@ export interface TabInfo {
   canGoBack?: boolean;
   canGoForward?: boolean;
   isSecure?: boolean;
+  profile_id?: string;
 }
 
 export interface ViewportBounds {
@@ -26,7 +27,7 @@ export interface ViewportBounds {
 
 export interface BrowserAdapter {
   /** Create a new tab and return its metadata */
-  createTab(url?: string, title?: string): Promise<TabInfo>;
+  createTab(url?: string, title?: string, profileId?: string): Promise<TabInfo>;
   /** Close an existing tab by ID */
   closeTab(tabId: string): Promise<void>;
   /** Switch active tab */

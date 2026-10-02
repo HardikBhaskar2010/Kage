@@ -8,6 +8,7 @@ members = [
     "crates/kage-plugin",
     "crates/kage-integration-tests",
     "crates/kage-cef-subprocess",
+    "crates/kage-client",
     "crates/kage-engine",
     "crates/kage-browser",
     "src-tauri",

@@ -1,18 +1,57 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import "./ConsolePanel.css";
 import { useBrowser } from "../../context/BrowserContext";
-import { Search, Trash2, Terminal, AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { evalJs } from "../../ipc/client";
+import {
+  Search,
+  Trash2,
+  Terminal,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  Sparkles,
+  Copy,
+  Check,
+  CornerDownLeft,
+} from "lucide-react";
 
 export const ConsolePanel: React.FC = () => {
-  const { consoleLogs, addConsoleLog, clearConsoleLogs } = useBrowser();
+  const {
+    activeTabId,
+    consoleLogs,
+    addConsoleLog,
+    clearConsoleLogs,
+    setActiveTool,
+    setAiOpen,
+  } = useBrowser();
+
   const [filter, setFilter] = useState<"all" | "error" | "warn" | "info">("all");
   const [search, setSearch] = useState("");
   const [commandInput, setCommandInput] = useState("");
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
 
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-scroll on new logs
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [consoleLogs]);
+
+  // Keyboard shortcut Ctrl+L / Cmd+K to clear console
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey && e.key === "l") || (e.metaKey && e.key === "k")) {
+        e.preventDefault();
+        clearConsoleLogs();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [clearConsoleLogs]);
 
   const errorCount = consoleLogs.filter((l) => l.level === "error").length;
   const warnCount = consoleLogs.filter((l) => l.level === "warn").length;
@@ -26,33 +65,99 @@ export const ConsolePanel: React.FC = () => {
     return true;
   });
 
-  const handleExecuteCommand = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleExecuteCommand = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const cmd = commandInput.trim();
-    if (!cmd) return;
+    if (!cmd || isEvaluating) return;
 
+    // Push into history and reset index
+    setCommandHistory((prev) => [...prev, cmd]);
+    setHistoryIndex(-1);
+
+    // Echo input into console log stream
     addConsoleLog("log", `> ${cmd}`, "console::eval");
+    setCommandInput("");
+    setIsEvaluating(true);
 
     try {
-      // Safe simulated JS evaluation
-      // eslint-disable-next-line no-new-func
-      const result = new Function(`
-        try {
-          return (${cmd});
-        } catch (e) {
-          return eval("${cmd.replace(/"/g, '\\"')}");
+      // Governed execution through host ToolBus -> devtools.runtime.evaluate (INV-02)
+      const res: any = await evalJs(cmd, activeTabId);
+
+      let formattedOutput = "";
+      if (res && typeof res === "object") {
+        if ("result" in res) {
+          const val = res.result?.value;
+          const desc = res.result?.description;
+          if (val !== undefined) {
+            formattedOutput = typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
+          } else if (desc) {
+            formattedOutput = desc;
+          } else {
+            formattedOutput = String(res.result?.type || "undefined");
+          }
+        } else if ("exceptionDetails" in res) {
+          const exc = res.exceptionDetails;
+          const msg = exc.exception?.description || exc.text || "Runtime evaluation error";
+          addConsoleLog("error", `Uncaught ${msg}`, "console::error");
+          setIsEvaluating(false);
+          return;
+        } else {
+          formattedOutput = JSON.stringify(res, null, 2);
         }
-      `)();
+      } else if (res === undefined) {
+        formattedOutput = "undefined";
+      } else {
+        formattedOutput = String(res);
+      }
 
-      const resultStr =
-        typeof result === "object" ? JSON.stringify(result, null, 2) : String(result);
-      addConsoleLog("info", `< ${resultStr}`, "console::result");
+      addConsoleLog("info", `< ${formattedOutput}`, "console::result");
     } catch (err: any) {
-      addConsoleLog("error", `Uncaught ${err.name || "Error"}: ${err.message}`, "console::error");
+      const errMsg = err?.message || String(err) || "Evaluation failed";
+      addConsoleLog("error", `Uncaught ${errMsg}`, "console::error");
+    } finally {
+      setIsEvaluating(false);
     }
-
-    setCommandInput("");
   };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (commandHistory.length === 0) return;
+      const nextIdx = historyIndex === -1 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(nextIdx);
+      setCommandInput(commandHistory[nextIdx]);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (commandHistory.length === 0 || historyIndex === -1) return;
+      const nextIdx = historyIndex + 1;
+      if (nextIdx >= commandHistory.length) {
+        setHistoryIndex(-1);
+        setCommandInput("");
+      } else {
+        setHistoryIndex(nextIdx);
+        setCommandInput(commandHistory[nextIdx]);
+      }
+    }
+  };
+
+  const copyToClipboard = useCallback((text: string, logId: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedLogId(logId);
+    setTimeout(() => setCopiedLogId(null), 1500);
+  }, []);
+
+  const explainWithAi = useCallback((errorMessage: string) => {
+    setActiveTool("ai");
+    setAiOpen(true);
+    // Dispatched via BrowserContext for AI Copilot preloaded context
+    window.dispatchEvent(
+      new CustomEvent("kage:ai:prompt", {
+        detail: {
+          prompt: `Please explain and diagnose this browser console error:\n\n\`\`\`\n${errorMessage}\n\`\`\``,
+        },
+      })
+    );
+  }, [setActiveTool, setAiOpen]);
 
   return (
     <div className="console-panel" role="region" aria-label="JavaScript Console">
@@ -93,7 +198,7 @@ export const ConsolePanel: React.FC = () => {
             <Search size={13} strokeWidth={2} className="console-search-icon" />
             <input
               type="text"
-              placeholder="Filter logs…"
+              placeholder="Filter logs (Ctrl+F)…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="console-search-input"
@@ -102,7 +207,7 @@ export const ConsolePanel: React.FC = () => {
           <button
             className="console-tool-btn"
             onClick={clearConsoleLogs}
-            title="Clear console"
+            title="Clear console (Ctrl+L)"
             aria-label="Clear console"
           >
             <Trash2 size={13} strokeWidth={2} />
@@ -128,6 +233,32 @@ export const ConsolePanel: React.FC = () => {
               </span>
               <span className="console-row__time">{log.timestamp}</span>
               <span className="console-row__message">{log.message}</span>
+
+              {/* Action buttons on log row */}
+              <div className="console-row__actions">
+                {log.level === "error" && (
+                  <button
+                    className="console-explain-btn"
+                    onClick={() => explainWithAi(log.message)}
+                    title="Explain with AI Copilot"
+                  >
+                    <Sparkles size={11} strokeWidth={2} />
+                    <span>Explain</span>
+                  </button>
+                )}
+                <button
+                  className="console-copy-btn"
+                  onClick={() => copyToClipboard(log.message, log.id)}
+                  title="Copy log text"
+                >
+                  {copiedLogId === log.id ? (
+                    <Check size={11} strokeWidth={2} />
+                  ) : (
+                    <Copy size={11} strokeWidth={2} />
+                  )}
+                </button>
+              </div>
+
               <span className="console-row__source">{log.source}</span>
             </div>
           ))
@@ -139,18 +270,31 @@ export const ConsolePanel: React.FC = () => {
       <form className="console-prompt" onSubmit={handleExecuteCommand}>
         <span className="console-prompt__arrow">&gt;</span>
         <input
+          ref={inputRef}
           type="text"
           value={commandInput}
           onChange={(e) => setCommandInput(e.target.value)}
-          placeholder="Evaluate JavaScript expression (e.g. document.title, 2 + 2, navigator.userAgent)…"
+          onKeyDown={handleKeyDown}
+          placeholder="Evaluate JavaScript expression via ToolBus (e.g. document.title, location.href, 2 + 2)…"
           className="console-prompt__input"
           spellCheck={false}
           autoComplete="off"
+          disabled={isEvaluating}
         />
-        <button type="submit" className="console-prompt__run-btn" disabled={!commandInput.trim()}>
-          Run
+        <button
+          type="submit"
+          className="console-prompt__run-btn"
+          disabled={!commandInput.trim() || isEvaluating}
+          title="Execute (Enter)"
+        >
+          {isEvaluating ? (
+            <span className="console-spinner" />
+          ) : (
+            <CornerDownLeft size={13} strokeWidth={2} />
+          )}
         </button>
       </form>
     </div>
   );
 };
+

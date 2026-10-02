@@ -2042,6 +2042,7 @@ dependencies = [
  "kage-engine",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -2070,6 +2071,16 @@ name = "kage-cef-subprocess"
 version = "0.2.1"
 dependencies = [
  "cef",
+]
+
+[[package]]
+name = "kage-client"
+version = "0.2.1"
+dependencies = [
+ "cef",
+ "kage-core",
+ "kage-engine",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2105,7 +2116,9 @@ name = "kage-engine"
 version = "0.2.1"
 dependencies = [
  "cef",
+ "hex",
  "serde",
+ "sha2",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -2116,6 +2129,7 @@ dependencies = [
 name = "kage-host"
 version = "0.2.1"
 dependencies = [
+ "async-trait",
  "kage-browser",
  "kage-cdp",
  "kage-context",
@@ -2147,6 +2161,7 @@ dependencies = [
  "kage-context",
  "kage-core",
  "kage-engine",
+ "kage-host",
  "kage-storage",
  "rusqlite",
  "serde",
