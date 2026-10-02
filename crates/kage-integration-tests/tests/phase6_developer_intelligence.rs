@@ -400,12 +400,7 @@ async fn test_phase6_empirical_developer_intelligence() {
 
     let pop_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.runtime.evaluate".to_string(),
-                args: json!({ "tab_id": tab_id.to_string(), "expression": populate_script }),
-                request_id: "req_populate".to_string(),
-                reason: "Setup DOM elements".to_string(),
-            },
+            ToolRequest::new("devtools.runtime.evaluate".to_string(), json!({ "tab_id": tab_id.to_string(), "expression": populate_script }), "req_populate".to_string(), "Setup DOM elements".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -421,12 +416,7 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 1. devtools.dom.get_document
     let doc_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.get_document".to_string(),
-                args: json!({ "tab_id": tab_id.to_string(), "depth": 2 }),
-                request_id: "req_get_doc".to_string(),
-                reason: "Inspect document root".to_string(),
-            },
+            ToolRequest::new("devtools.dom.get_document".to_string(), json!({ "tab_id": tab_id.to_string(), "depth": 2 }), "req_get_doc".to_string(), "Inspect document root".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -440,16 +430,11 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 2. devtools.dom.query_selector
     let qs_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.query_selector".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.dom.query_selector".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "node_id": root_node_id,
                     "selector": "#test-heading",
-                }),
-                request_id: "req_qs".to_string(),
-                reason: "Query heading node".to_string(),
-            },
+                }), "req_qs".to_string(), "Query heading node".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -462,16 +447,11 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 3. devtools.dom.query_selector_all
     let qsa_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.query_selector_all".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.dom.query_selector_all".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "node_id": root_node_id,
                     "selector": ".test-paragraph",
-                }),
-                request_id: "req_qsa".to_string(),
-                reason: "Query paragraph nodes".to_string(),
-            },
+                }), "req_qsa".to_string(), "Query paragraph nodes".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -484,15 +464,10 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 4. devtools.dom.get_outer_html
     let html_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.get_outer_html".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.dom.get_outer_html".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "node_id": heading_node_id,
-                }),
-                request_id: "req_html".to_string(),
-                reason: "Get heading outer HTML".to_string(),
-            },
+                }), "req_html".to_string(), "Get heading outer HTML".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -505,16 +480,11 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 5. devtools.dom.get_attributes
     let qs_cont = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.query_selector".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.dom.query_selector".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "node_id": root_node_id,
                     "selector": "#test-container",
-                }),
-                request_id: "req_qs_cont".to_string(),
-                reason: "Query container node".to_string(),
-            },
+                }), "req_qs_cont".to_string(), "Query container node".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -524,15 +494,10 @@ async fn test_phase6_empirical_developer_intelligence() {
 
     let attr_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.get_attributes".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.dom.get_attributes".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "node_id": container_node_id,
-                }),
-                request_id: "req_attr".to_string(),
-                reason: "Get container attributes".to_string(),
-            },
+                }), "req_attr".to_string(), "Get container attributes".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -547,15 +512,10 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 6. devtools.dom.get_bounds
     let bounds_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.get_bounds".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.dom.get_bounds".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "node_id": container_node_id,
-                }),
-                request_id: "req_bounds".to_string(),
-                reason: "Get container box model".to_string(),
-            },
+                }), "req_bounds".to_string(), "Get container box model".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -577,16 +537,11 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 1. Create remote object in V8 and retrieve its objectId
     let create_obj_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.runtime.evaluate".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.runtime.evaluate".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "expression": "window.__TEST_REMOTE_OBJ = { alpha: 42, beta: 'kage_v8', nested: { gamma: true } }; window.__TEST_REMOTE_OBJ",
                     "return_by_value": false, // Return RemoteObject with objectId
-                }),
-                request_id: "req_create_obj".to_string(),
-                reason: "Create remote V8 object".to_string(),
-            },
+                }), "req_create_obj".to_string(), "Create remote V8 object".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -601,16 +556,11 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 2. devtools.runtime.get_properties
     let props_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.runtime.get_properties".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.runtime.get_properties".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "object_id": remote_obj_id,
                     "own_properties": true,
-                }),
-                request_id: "req_get_props".to_string(),
-                reason: "Inspect remote object properties".to_string(),
-            },
+                }), "req_get_props".to_string(), "Inspect remote object properties".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -626,17 +576,12 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 3. devtools.runtime.call_function
     let call_fn_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.runtime.call_function".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.runtime.call_function".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "object_id": remote_obj_id,
                     "function_declaration": "function() { return this.alpha * 3; }",
                     "return_by_value": true,
-                }),
-                request_id: "req_call_fn".to_string(),
-                reason: "Invoke method on remote object".to_string(),
-            },
+                }), "req_call_fn".to_string(), "Invoke method on remote object".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -648,17 +593,12 @@ async fn test_phase6_empirical_developer_intelligence() {
     // 4. devtools.runtime.await_promise
     let create_prom_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.runtime.evaluate".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.runtime.evaluate".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "expression": "Promise.resolve('KAGE_PROMISE_RESOLVED_VALUE')",
                     "return_by_value": false,
                     "await_promise": false,
-                }),
-                request_id: "req_create_prom".to_string(),
-                reason: "Create unresolved promise remote object".to_string(),
-            },
+                }), "req_create_prom".to_string(), "Create unresolved promise remote object".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -670,16 +610,11 @@ async fn test_phase6_empirical_developer_intelligence() {
 
     let await_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.runtime.await_promise".to_string(),
-                args: json!({
+            ToolRequest::new("devtools.runtime.await_promise".to_string(), json!({
                     "tab_id": tab_id.to_string(),
                     "promise_object_id": prom_obj_id,
                     "return_by_value": true,
-                }),
-                request_id: "req_await_prom".to_string(),
-                reason: "Await remote promise".to_string(),
-            },
+                }), "req_await_prom".to_string(), "Await remote promise".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -708,12 +643,7 @@ async fn test_phase6_empirical_developer_intelligence() {
 
     let _ = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.runtime.evaluate".to_string(),
-                args: json!({ "tab_id": tab_id.to_string(), "expression": set_storage_script }),
-                request_id: "req_set_storage".to_string(),
-                reason: "Set localStorage items".to_string(),
-            },
+            ToolRequest::new("devtools.runtime.evaluate".to_string(), json!({ "tab_id": tab_id.to_string(), "expression": set_storage_script }), "req_set_storage".to_string(), "Set localStorage items".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -723,12 +653,7 @@ async fn test_phase6_empirical_developer_intelligence() {
     // Inspect localStorage via governed devtools.storage.get_local_storage
     let storage_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.storage.get_local_storage".to_string(),
-                args: json!({ "tab_id": tab_id.to_string() }),
-                request_id: "req_get_storage".to_string(),
-                reason: "Inspect localStorage".to_string(),
-            },
+            ToolRequest::new("devtools.storage.get_local_storage".to_string(), json!({ "tab_id": tab_id.to_string() }), "req_get_storage".to_string(), "Inspect localStorage".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -751,12 +676,7 @@ async fn test_phase6_empirical_developer_intelligence() {
     // Test devtools.storage.get_cookies
     let cookies_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.storage.get_cookies".to_string(),
-                args: json!({ "tab_id": tab_id.to_string() }),
-                request_id: "req_get_cookies".to_string(),
-                reason: "Inspect cookies".to_string(),
-            },
+            ToolRequest::new("devtools.storage.get_cookies".to_string(), json!({ "tab_id": tab_id.to_string() }), "req_get_cookies".to_string(), "Inspect cookies".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -783,12 +703,7 @@ async fn test_phase6_empirical_developer_intelligence() {
     let unknown_tab_uuid = Uuid::new_v4();
     let invalid_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.get_document".to_string(),
-                args: json!({ "tab_id": unknown_tab_uuid.to_string() }),
-                request_id: "req_invalid_tab".to_string(),
-                reason: "Query nonexistent tab".to_string(),
-            },
+            ToolRequest::new("devtools.dom.get_document".to_string(), json!({ "tab_id": unknown_tab_uuid.to_string() }), "req_invalid_tab".to_string(), "Query nonexistent tab".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )
@@ -799,12 +714,8 @@ async fn test_phase6_empirical_developer_intelligence() {
     // Verify negative test: missing required argument fails with SchemaViolation
     let missing_arg_resp = tool_bus
         .dispatch(
-            ToolRequest {
-                tool_id: "devtools.dom.query_selector".to_string(),
-                args: json!({ "tab_id": tab_id.to_string(), "node_id": root_node_id }), // missing selector
-                request_id: "req_missing_arg".to_string(),
-                reason: "Query without selector".to_string(),
-            },
+            ToolRequest::new("devtools.dom.query_selector".to_string(), json!({ "tab_id": tab_id.to_string(), "node_id": root_node_id }), // missing selector
+                request_id: "req_missing_arg".to_string(), "req_missing_arg".to_string(), "Query without selector".to_string()),
             policy_ctx.clone(),
             CancellationToken::new(),
         )

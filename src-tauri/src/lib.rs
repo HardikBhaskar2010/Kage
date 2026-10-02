@@ -154,12 +154,13 @@ pub fn run() {
     });
     cef_runtime.add_observer(bridge.clone());
 
-    // Register governed Developer Plane tools on ToolBus (INV-02)
+    // Register governed Developer Plane and Canonical Agent tools on ToolBus (INV-02)
     let reg_bus = tool_bus.clone();
     let reg_tabs = tab_manager.clone();
     let reg_cdp = cdp_session_manager.clone();
     tauri::async_runtime::block_on(async move {
-        tools::register_developer_tools(&reg_bus, reg_tabs, reg_cdp).await;
+        tools::register_developer_tools(&reg_bus, reg_tabs.clone(), reg_cdp.clone()).await;
+        tools::register_canonical_tools(&reg_bus, reg_tabs, reg_cdp).await;
     });
 
     let host_hwnd = HostWindowHandle(Arc::new(std::sync::atomic::AtomicIsize::new(0)));

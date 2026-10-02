@@ -85,11 +85,11 @@ impl KageTool for RuntimeGetPropertiesTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP Runtime.getProperties failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -173,11 +173,11 @@ impl KageTool for RuntimeCallFunctionTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP Runtime.callFunctionOn failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -248,11 +248,11 @@ impl KageTool for RuntimeAwaitPromiseTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP Runtime.awaitPromise failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }

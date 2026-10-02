@@ -788,17 +788,17 @@ async fn test_phase4_empirical_cdp_e2e() {
 
     // 1. Physical arithmetic execution in Chromium V8: "7 * 6" -> 42
     println!("--- [Hop-by-Hop Governance Telemetry: 7 * 6 -> 42] ---");
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id_1.to_string(),
             "expression": "7 * 6",
             "return_by_value": true,
             "await_promise": true,
         }),
-        request_id: "req_real_cef_01".to_string(),
-        reason: "Physical Chromium V8 arithmetic execution".to_string(),
-    };
+        "req_real_cef_01",
+        "Physical Chromium V8 arithmetic execution",
+    );
     let ctx = PartialPolicyContext::new("devtools_console", "sess_real_cef", "default_ws", true);
     println!("  [Hop 1: ToolBus Dispatch Ingestion] ToolRequest(id='{}', tool='{}', tab_id={})", request.request_id, request.tool_id, tab_id_1);
     println!("  [Hop 2: PolicyEngine Adjudication] Context: caller='{}', session='{}', granted={} -> Decision::Allow (Tier::StateMutating)", ctx.caller_id, ctx.session_id, ctx.session_granted);
@@ -817,17 +817,17 @@ async fn test_phase4_empirical_cdp_e2e() {
 
     // 2. Physical DOM reading from live Chromium DOM: document.title
     println!("\n--- [Physical DOM State Inspection via Governed ToolBus] ---");
-    let title_req = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let title_req = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id_1.to_string(),
             "expression": "document.title",
             "return_by_value": true,
             "await_promise": true,
         }),
-        request_id: "req_real_title_02".to_string(),
-        reason: "Physical Chromium DOM title read".to_string(),
-    };
+        "req_real_title_02",
+        "Physical Chromium DOM title read",
+    );
     let title_resp = tool_bus.dispatch(title_req, ctx.clone(), CancellationToken::new()).await.expect("real chromium title read");
     let val = title_resp.output["result"]["value"].as_str().unwrap();
     assert!(val.starts_with("Example Domain"), "Expected title to start with 'Example Domain', got '{}'", val);
@@ -835,17 +835,17 @@ async fn test_phase4_empirical_cdp_e2e() {
 
     // 3. Physical exception propagation from Chromium V8
     println!("\n--- [Physical V8 Exception Details Preservation] ---");
-    let err_req = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let err_req = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id_1.to_string(),
             "expression": "(() => { throw new Error('REAL_CHROMIUM_EXCEPTION'); })()",
             "return_by_value": true,
             "await_promise": true,
         }),
-        request_id: "req_real_err_03".to_string(),
-        reason: "Physical Chromium V8 exception propagation".to_string(),
-    };
+        "req_real_err_03",
+        "Physical Chromium V8 exception propagation",
+    );
     let err_resp = tool_bus.dispatch(err_req, ctx.clone(), CancellationToken::new()).await.expect("real chromium exception");
     assert!(err_resp.output.get("exceptionDetails").is_some());
     println!("  -> Real Chromium V8 exception captured and preserved in exceptionDetails");
@@ -856,9 +856,9 @@ async fn test_phase4_empirical_cdp_e2e() {
     // Chromium V8 (Generates Secret) -> Raw CDP Result (Contains Raw Secret) -> ToolBus Exit Sanitizer -> [REDACTED]
     println!("\n--- [Physical Raw-Secret Flow & Boundary Scrubbing (INV-06)] ---");
     let dynamic_nonce = "LIVE_V8_TEST_SECRET_998877";
-    let sec_req = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let sec_req = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id_1.to_string(),
             "expression": format!(
                 r#"(() => {{
@@ -870,9 +870,9 @@ async fn test_phase4_empirical_cdp_e2e() {
             "return_by_value": true,
             "await_promise": true,
         }),
-        request_id: "req_real_sec_04".to_string(),
-        reason: "Physical secret scrubbing at ToolBus boundary".to_string(),
-    };
+        "req_real_sec_04",
+        "Physical secret scrubbing at ToolBus boundary",
+    );
     let sec_resp = tool_bus.dispatch(sec_req, ctx, CancellationToken::new()).await.expect("real chromium secret sanitization");
     let sanitized_val = sec_resp.output["result"]["value"].as_str().unwrap();
 

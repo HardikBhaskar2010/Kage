@@ -30,7 +30,9 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::audit::{digest_json, ActorType, AuditSink, AuditStatus, CanonicalAuditRecord};
+use crate::lineage::ExecutionStatus;
 use crate::policy::{AuditFailurePolicy, PolicyContext, PolicyDecision, PolicyEngine};
+use crate::registry::{CapabilityRegistry, ToolMetadata};
 use crate::sanitizer::SecretSanitizer;
 use crate::tool::{KageTool, ToolError, ToolRequest, ToolResponse};
 
@@ -41,6 +43,7 @@ use crate::tool::{KageTool, ToolError, ToolRequest, ToolResponse};
 /// Thread-safe central registry and dispatch point for all [`KageTool`] implementations.
 pub struct ToolBus {
     registry: RwLock<HashMap<String, Arc<dyn KageTool>>>,
+    capability_registry: CapabilityRegistry,
     policy: PolicyEngine,
     sanitizer: SecretSanitizer,
     audit_sink: Option<Arc<dyn AuditSink>>,
@@ -52,11 +55,17 @@ impl ToolBus {
     pub fn new() -> Self {
         ToolBus {
             registry: RwLock::new(HashMap::new()),
+            capability_registry: CapabilityRegistry::new(),
             policy: PolicyEngine::new(),
             sanitizer: SecretSanitizer::new(),
             audit_sink: None,
             host_instance_id: format!("inst_{}", uuid::Uuid::new_v4().simple()),
         }
+    }
+
+    /// Access the underlying dynamic capability registry.
+    pub fn capability_registry(&self) -> &CapabilityRegistry {
+        &self.capability_registry
     }
 
     /// Set an explicit host instance ID (e.g. from desktop host process).
@@ -90,6 +99,12 @@ impl ToolBus {
         registry.insert(id, Arc::new(tool));
     }
 
+    /// Register a [`KageTool`] together with its declarative [`ToolMetadata`].
+    pub async fn register_with_metadata(&self, tool: impl KageTool, metadata: ToolMetadata) {
+        self.capability_registry.register(metadata).await;
+        self.register(tool).await;
+    }
+
     /// Dispatch a [`ToolRequest`] through the full governance pipeline.
     ///
     /// # Invariants Enforced
@@ -105,6 +120,10 @@ impl ToolBus {
         cancel: CancellationToken,
     ) -> Result<ToolResponse, ToolError> {
         let start = Instant::now();
+        let started_at_utc = chrono::Utc::now();
+        let execution_id = request.execution_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let task_id = request.task_id.clone();
+        let step_id = request.step_id.clone();
 
         // Check cancellation immediately (INV-09)
         if cancel.is_cancelled() {
@@ -130,6 +149,48 @@ impl ToolBus {
             });
         }
 
+        // 2.5 Strict eval_js / Developer Tool Prohibition (Phase 8 M8 Contract GATE-08-H)
+        // Autonomous agent planner CANNOT invoke arbitrary Runtime.evaluate / developer tools without explicit escalation.
+        if let Some(meta) = self.capability_registry.get(&request.tool_id).await {
+            let is_agent_caller = task_id.is_some() || ctx_partial.caller_id.contains("agent") || ctx_partial.caller_id == "ai_subsystem";
+            if meta.is_developer_only && is_agent_caller {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                if let Some(ref sink) = self.audit_sink {
+                    let _ = sink.append(CanonicalAuditRecord {
+                        sequence: None,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        request_id: request.request_id.clone(),
+                        parent_request_id: None,
+                        task_id: task_id.clone(),
+                        step_id: step_id.clone(),
+                        execution_id: Some(execution_id.clone()),
+                        caller: ctx_partial.caller_id.clone(),
+                        actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
+                        tool_id: request.tool_id.clone(),
+                        capability: format!("{:?}", tool.tier()),
+                        profile_id: ctx_partial.profile_id.clone(),
+                        tab_id: ctx_partial.tab_id.clone(),
+                        target_id: ctx_partial.target_id.clone(),
+                        session_id: Some(ctx_partial.session_id.clone()),
+                        origin: ctx_partial.origin.clone(),
+                        tier: tool.tier() as u8,
+                        policy_decision: "denied: developer tool prohibited from autonomous agent execution".into(),
+                        confirmation_id: None,
+                        args_digest: digest_json(&request.args),
+                        result_digest: None,
+                        status: AuditStatus::Denied,
+                        duration_ms,
+                        error_code: Some("DEVELOPER_TOOL_PROHIBITED_FOR_AGENT".into()),
+                        host_instance_id: Some(self.host_instance_id.clone()),
+                        prev_hash: None,
+                    }).await;
+                }
+                return Err(ToolError::DeveloperToolProhibited {
+                    tool_id: request.tool_id.clone(),
+                });
+            }
+        }
+
         // 3. Policy adjudication (INV-04).
         let policy_ctx = PolicyContext {
             caller_id: ctx_partial.caller_id.clone(),
@@ -149,6 +210,9 @@ impl ToolBus {
                         timestamp: chrono::Utc::now().to_rfc3339(),
                         request_id: request.request_id.clone(),
                         parent_request_id: None,
+                        task_id: task_id.clone(),
+                        step_id: step_id.clone(),
+                        execution_id: Some(execution_id.clone()),
                         caller: ctx_partial.caller_id.clone(),
                         actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
                         tool_id: request.tool_id.clone(),
@@ -184,6 +248,9 @@ impl ToolBus {
                         timestamp: chrono::Utc::now().to_rfc3339(),
                         request_id: request.request_id.clone(),
                         parent_request_id: None,
+                        task_id: task_id.clone(),
+                        step_id: step_id.clone(),
+                        execution_id: Some(execution_id.clone()),
                         caller: ctx_partial.caller_id.clone(),
                         actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
                         tool_id: request.tool_id.clone(),
@@ -225,6 +292,9 @@ impl ToolBus {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     request_id: request.request_id.clone(),
                     parent_request_id: None,
+                    task_id: task_id.clone(),
+                    step_id: step_id.clone(),
+                    execution_id: Some(execution_id.clone()),
                     caller: ctx_partial.caller_id.clone(),
                     actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
                     tool_id: request.tool_id.clone(),
@@ -268,6 +338,12 @@ impl ToolBus {
                 // 6. Sanitize output before returning to caller (INV-06).
                 response.output = self.sanitizer.sanitize(response.output);
                 response.elapsed_ms = duration_ms;
+                response.execution_id = execution_id.clone();
+                response.task_id = task_id.clone();
+                response.step_id = step_id.clone();
+                response.status = ExecutionStatus::Success;
+                response.started_at = Some(started_at_utc);
+                response.completed_at = Some(chrono::Utc::now());
 
                 // 7. Record completion in audit ledger (INV-05).
                 if let Some(ref sink) = self.audit_sink {
@@ -276,6 +352,9 @@ impl ToolBus {
                         timestamp: chrono::Utc::now().to_rfc3339(),
                         request_id: request.request_id.clone(),
                         parent_request_id: None,
+                        task_id: task_id.clone(),
+                        step_id: step_id.clone(),
+                        execution_id: Some(execution_id.clone()),
                         caller: ctx_partial.caller_id.clone(),
                         actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
                         tool_id: request.tool_id.clone(),
@@ -330,6 +409,9 @@ impl ToolBus {
                         timestamp: chrono::Utc::now().to_rfc3339(),
                         request_id: request.request_id.clone(),
                         parent_request_id: None,
+                        task_id: task_id.clone(),
+                        step_id: step_id.clone(),
+                        execution_id: Some(execution_id.clone()),
                         caller: ctx_partial.caller_id.clone(),
                         actor: ctx_partial.actor.unwrap_or(ActorType::Agent),
                         tool_id: request.tool_id.clone(),

@@ -106,13 +106,19 @@ graph TD
 │  PHASE 2A — CEF Engine Infrastructure            ██████████  SEALED (100%)       │
 │  PHASE 2B — Real CEF Lifecycle                   ██████████  SEALED (100%)       │
 │  PHASE 2C — Production Tauri + CEF Composition   ██████████  SEALED (100%)       │
-│  PHASE 2D — CEF 152 Sandbox Release Packaging    ███████░░░  PENDING (CEF-03b-D) │
+│  PHASE 2D — CEF 152 Sandbox Release Packaging    ██████████  SEALED (CEF-03b-D)  │
+│  PHASE 3  — Browser Lifecycle & Control Plane    ██████████  SEALED (100%)       │
+│  PHASE 4  — Empirical CDP DevTools Protocol      ██████████  SEALED (100%)       │
+│  PHASE 5  — Live Telemetry & Context Streaming   ██████████  SEALED (100%)       │
+│  PHASE 6  — Developer Intelligence Subsystem     ██████████  SEALED (100%)       │
+│  PHASE 7  — Profiles, Storage & Permissions      ██████████  SEALED (100%)       │
+│  PHASE 8  — Governed Tool Suite & Capabilities   ██████████  SEALED (100%)       │
 │  ──────────────────────────────────────────────────────────────────────────────  │
-│  OVERALL PHASE 2: PRODUCTION-FUNCTIONALLY COMPLETE (Security Packaging Pending)  │
+│  PHASE 9  — Autonomous Agent Runtime & Context   ██████████  SEALED (100%)       │
+│  PHASE 10 — Verified Autonomy, STOP & Recovery   ░░░░░░░░░░  PENDING (Next)      │
+│  PHASE 11 — KAGE MVP Release & Hardened Shell    ░░░░░░░░░░  PENDING             │
 │  ──────────────────────────────────────────────────────────────────────────────  │
-│  PHASE 3  — Browser Lifecycle & Control Plane    ████████░░  CONTROL-PLANE OK    │
-│             (Control-plane verified; real CEF callback/crash/profile E2E pending)│
-│  FULL KAGE AGENT CONTROL CONTRACTS:              ░░░░░░░░░░  NOT SEALED          │
+│  FULL KAGE AUTONOMOUS AGENT CONTROL PLANE:       █████████░  IN PROGRESS (M10)   │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 

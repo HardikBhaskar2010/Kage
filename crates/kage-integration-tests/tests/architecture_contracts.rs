@@ -36,11 +36,11 @@ impl KageTool for MockClickTool {
         _cancel: CancellationToken,
     ) -> Result<ToolResponse, ToolError> {
         self.executed.store(true, Ordering::SeqCst);
-        Ok(ToolResponse {
-            request_id: request.request_id.clone(),
-            output: json!({ "status": "clicked" }),
-            elapsed_ms: 5,
-        })
+        Ok(ToolResponse::new(
+            request.request_id.clone(),
+            json!({ "status": "clicked" }),
+            5,
+        ))
     }
 }
 
@@ -62,9 +62,9 @@ impl KageTool for MockSecretReturningTool {
         request: &ToolRequest,
         _cancel: CancellationToken,
     ) -> Result<ToolResponse, ToolError> {
-        Ok(ToolResponse {
-            request_id: request.request_id.clone(),
-            output: json!({
+        Ok(ToolResponse::new(
+            request.request_id.clone(),
+            json!({
                 "username": "admin_user",
                 "password": "SuperSecretMasterPassword123!",
                 "token": "bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.sensitive_claim.sig",
@@ -72,8 +72,8 @@ impl KageTool for MockSecretReturningTool {
                 "card_number": "4111-2222-3333-4444",
                 "api_key": "kage_sec_prod_live_key_001"
             }),
-            elapsed_ms: 3,
-        })
+            3,
+        ))
     }
 }
 
@@ -98,6 +98,9 @@ async fn contract_gate_04_privileged_mutations_require_policy_approval() {
 
     // Dispatch without session grant
     let req = ToolRequest {
+        task_id: None,
+        step_id: None,
+        execution_id: None,
         tool_id: "page.click".into(),
         args: json!({ "selector": "button#submit" }),
         request_id: "req-gate-04".into(),
@@ -138,6 +141,9 @@ async fn contract_gate_05_privileged_mutations_fail_closed_without_audit() {
     bus.register(MockClickTool { executed: executed.clone() }).await;
 
     let req = ToolRequest {
+        task_id: None,
+        step_id: None,
+        execution_id: None,
         tool_id: "page.click".into(),
         args: json!({ "selector": "button#submit" }),
         request_id: "req-gate-05".into(),
@@ -187,6 +193,9 @@ async fn contract_gate_05_audit_completeness_and_startup_reconciliation() {
     bus.register(MockClickTool { executed: executed.clone() }).await;
 
     let req_ok = ToolRequest {
+        task_id: None,
+        step_id: None,
+        execution_id: None,
         tool_id: "page.click".into(),
         args: json!({ "selector": "#btn-ok" }),
         request_id: "req-complete-01".into(),
@@ -222,6 +231,9 @@ async fn contract_gate_05_audit_completeness_and_startup_reconciliation() {
         session_id: Some("sess-crash".into()),
         origin: Some("https://example.com".into()),
         tier: 2,
+        task_id: None,
+        step_id: None,
+        execution_id: None,
         policy_decision: "allow".into(),
         confirmation_id: None,
         args_digest: "d41d8cd98f00b204e9800998ecf8427e".into(),
@@ -307,6 +319,9 @@ async fn test_credential_never_crosses_llm_boundary() {
     });
 
     let req = ToolRequest {
+        task_id: None,
+        step_id: None,
+        execution_id: None,
         tool_id: "credential.retrieve".into(),
         args: sensitive_args,
         request_id: "req-sec-boundary-01".into(),
@@ -399,6 +414,9 @@ async fn contract_gate_09_stop_prevents_subsequent_actions() {
     cancel.cancel(); // User clicked "Take Control" or "STOP"
 
     let req = ToolRequest {
+        task_id: None,
+        step_id: None,
+        execution_id: None,
         tool_id: "page.click".into(),
         args: json!({ "selector": "button#submit" }),
         request_id: "req-gate-09".into(),

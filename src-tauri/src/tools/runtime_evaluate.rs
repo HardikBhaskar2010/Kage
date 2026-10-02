@@ -164,11 +164,11 @@ impl KageTool for RuntimeEvaluateTool {
                             "CDP Runtime.evaluate completed successfully"
                         );
 
-                        Ok(ToolResponse {
-                            request_id: request.request_id.clone(),
-                            output: cdp_output,
+                        Ok(ToolResponse::new(
+                            request.request_id.clone(),
+                            cdp_output,
                             elapsed_ms,
-                        })
+                        ))
                     }
                     Err(e) => {
                         tracing::error!(

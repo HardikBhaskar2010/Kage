@@ -78,11 +78,11 @@ impl KageTool for NetworkGetResponseBodyTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP Network.getResponseBody failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }

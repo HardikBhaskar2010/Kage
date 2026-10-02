@@ -34,11 +34,11 @@ impl KageTool for ConcurrentTestTool {
         request: &ToolRequest,
         _cancel: CancellationToken,
     ) -> Result<ToolResponse, ToolError> {
-        Ok(ToolResponse {
-            request_id: request.request_id.clone(),
-            output: json!({ "echo": request.args }),
-            elapsed_ms: 1,
-        })
+        Ok(ToolResponse::new(
+            request.request_id.clone(),
+            json!({ "echo": request.args }),
+            1,
+        ))
     }
 }
 
@@ -56,12 +56,7 @@ async fn test_concurrent_serialized_audit_appends() {
     for i in 1..=CONCURRENT_TASKS {
         let bus = bus.clone();
         set.spawn(async move {
-            let req = ToolRequest {
-                tool_id: "concurrent.action".into(),
-                args: json!({ "task_index": i }),
-                request_id: format!("req-concurrent-{i:03}"),
-                reason: format!("Concurrent task {i}"),
-            };
+            let req = ToolRequest::new("concurrent.action".into(), json!({ "task_index": i }), format!("req-concurrent-{i:03}"), format!("Concurrent task {i}"));
             let ctx = PartialPolicyContext {
                 caller_id: format!("agent_worker_{i}"),
                 session_id: "sess_parallel".into(),

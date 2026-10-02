@@ -50,6 +50,12 @@ pub struct ToolDispatchPayload {
     pub session_id: String,
     pub workspace_id: String,
     pub session_granted: bool,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub step_id: Option<String>,
+    #[serde(default)]
+    pub execution_id: Option<String>,
 }
 
 /// IPC command: `kage:tool:dispatch`
@@ -62,6 +68,9 @@ pub async fn tool_dispatch(
     bus: State<'_, Arc<ToolBus>>,
 ) -> Result<serde_json::Value, String> {
     let request = ToolRequest {
+        task_id: payload.task_id,
+        step_id: payload.step_id,
+        execution_id: payload.execution_id,
         tool_id: payload.tool_id,
         args: payload.args,
         request_id: payload.request_id,
@@ -424,6 +433,9 @@ pub async fn eval_js(
 
     let request_id = format!("req_eval_{}", Uuid::new_v4().simple());
     let request = ToolRequest {
+        task_id: None,
+        step_id: None,
+        execution_id: None,
         tool_id: "devtools.runtime.evaluate".to_string(),
         args: serde_json::json!({
             "tab_id": target_tab_id.to_string(),

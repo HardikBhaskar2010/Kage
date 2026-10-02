@@ -83,11 +83,11 @@ impl KageTool for StorageGetCookiesTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP Network.getCookies failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -161,11 +161,11 @@ impl KageTool for StorageGetLocalStorageTool {
                 let output = json!({
                     "items": eval_res.get("result").and_then(|r| r.get("value")).unwrap_or(&json!({}))
                 });
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -239,11 +239,11 @@ impl KageTool for StorageGetSessionStorageTool {
                 let output = json!({
                     "items": eval_res.get("result").and_then(|r| r.get("value")).unwrap_or(&json!({}))
                 });
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }

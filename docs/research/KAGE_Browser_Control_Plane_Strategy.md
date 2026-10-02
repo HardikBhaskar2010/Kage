@@ -378,24 +378,20 @@ PHASE 6: Real Micro Inspect
          DOM.getNodeForLocation coordinate pipeline replacing fake 42
                      │
                      ▼
-PHASE 8: Production KageTool Registration
-         page.*, dom.*, browser.* registered on ToolBus with risk schemas
+PHASE 8: Governed Tool Suite & Capability Registry [SEALED]
+         page.*, tab.*, browser.* registered on ToolBus with dynamic registry & eval_js lockout
                      │
                      ▼
-PHASE 9: Real LLM Agent Loop
-         Structured tool calling (Ollama / Anthropic) replacing regex
+PHASE 9: Autonomous Agent Runtime & Context Planning (M9) [NEXT]
+         Context engine (4K pack), registry-driven planner, model abstraction, INV-03
                      │
                      ▼
-PHASE 10: Deterministic Verifier & User Takeover HUD
-          Postcondition checks and hardware-level pause/takeover
+PHASE 10: Verified Autonomy, STOP & Recovery (M10)
+          Deterministic Verifier (INV-08), physical STOP (INV-09), human takeover HUD
                      │
                      ▼
-PHASE 11: Agent Security & Indirect Prompt-Injection Hardening
-          Delimited observation envelopes and untrusted provenance tags
-                     │
-                     ▼
-PHASE 12: Testing Lab & Standards
-          Headless replay runner, cross-crate integration tests, WebDriver BiDi
+PHASE 11: KAGE MVP Release & Hardened Product Shell (M11)
+          Liquid Glass UI polish, action timeline, security regression, release packaging
 ```
 
 ### The First Real Milestone (Alpha Gate)

@@ -116,6 +116,15 @@ pub struct CanonicalAuditRecord {
     pub request_id: String,
     /// Optional parent request ID for agent sub-tasks or chained plans.
     pub parent_request_id: Option<String>,
+    /// Optional correlated Agent Task ID.
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// Optional correlated Plan Step ID.
+    #[serde(default)]
+    pub step_id: Option<String>,
+    /// Optional execution instance ID.
+    #[serde(default)]
+    pub execution_id: Option<String>,
     /// Caller identifier (e.g. "ai_subsystem", "plugin:devtools").
     pub caller: String,
     /// Actor class: user, agent, or system.

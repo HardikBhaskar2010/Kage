@@ -11,6 +11,7 @@ members = [
     "crates/kage-client",
     "crates/kage-engine",
     "crates/kage-browser",
+    "crates/kage-agent",
     "src-tauri",
 ]
 

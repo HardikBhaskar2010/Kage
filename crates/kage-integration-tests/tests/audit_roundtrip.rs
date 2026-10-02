@@ -32,11 +32,11 @@ impl KageTool for TestInspectTool {
         request: &ToolRequest,
         _cancel: CancellationToken,
     ) -> Result<ToolResponse, ToolError> {
-        Ok(ToolResponse {
-            request_id: request.request_id.clone(),
-            output: json!({ "node_name": "DIV", "visible": true }),
-            elapsed_ms: 5,
-        })
+        Ok(ToolResponse::new(
+            request.request_id.clone(),
+            json!({ "node_name": "DIV", "visible": true }),
+            5,
+        ))
     }
 }
 
@@ -58,11 +58,11 @@ impl KageTool for TestClickTool {
         request: &ToolRequest,
         _cancel: CancellationToken,
     ) -> Result<ToolResponse, ToolError> {
-        Ok(ToolResponse {
-            request_id: request.request_id.clone(),
-            output: json!({ "clicked": true, "selector": "button#submit" }),
-            elapsed_ms: 10,
-        })
+        Ok(ToolResponse::new(
+            request.request_id.clone(),
+            json!({ "clicked": true, "selector": "button#submit" }),
+            10,
+        ))
     }
 }
 
@@ -76,12 +76,12 @@ async fn test_audit_roundtrip_and_tamper_detection() {
     bus.register(TestClickTool).await;
 
     // 2. Dispatch read-only action (Tier 1)
-    let inspect_req = ToolRequest {
-        tool_id: "dom.inspect".into(),
-        args: json!({ "selector": "#header" }),
-        request_id: "req-roundtrip-01".into(),
-        reason: "Inspect page header".into(),
-    };
+    let inspect_req = ToolRequest::new(
+        "dom.inspect",
+        json!({ "selector": "#header" }),
+        "req-roundtrip-01",
+        "Inspect page header",
+    );
     let inspect_ctx = PartialPolicyContext {
         caller_id: "ai_planner".into(),
         session_id: "sess_01".into(),
@@ -101,12 +101,12 @@ async fn test_audit_roundtrip_and_tamper_detection() {
     assert_eq!(resp1.output["node_name"], "DIV");
 
     // 3. Dispatch mutating action (Tier 2) with session approval (Two-stage lifecycle)
-    let click_req = ToolRequest {
-        tool_id: "page.click".into(),
-        args: json!({ "selector": "button#submit" }),
-        request_id: "req-roundtrip-02".into(),
-        reason: "Click submit button".into(),
-    };
+    let click_req = ToolRequest::new(
+        "page.click",
+        json!({ "selector": "button#submit" }),
+        "req-roundtrip-02",
+        "Click submit button",
+    );
     let click_ctx = PartialPolicyContext {
         caller_id: "ai_planner".into(),
         session_id: "sess_01".into(),

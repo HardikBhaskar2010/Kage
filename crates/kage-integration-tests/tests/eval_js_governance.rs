@@ -86,17 +86,17 @@ async fn test_eval_js_policy_denial_prevents_execution() {
         .await
         .unwrap();
 
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id.to_string(),
             "expression": "1 + 1",
             "return_by_value": true,
             "await_promise": true,
         }),
-        request_id: "req_denial_01".to_string(),
-        reason: "Test ungranted eval_js".to_string(),
-    };
+        "req_denial_01",
+        "Test ungranted eval_js",
+    );
 
     // Caller with session_granted = false (e.g. unescalated AgentSandbox)
     let ctx = PartialPolicyContext::new(
@@ -154,15 +154,15 @@ async fn test_eval_js_audit_failure_fails_closed_inv05() {
         .await
         .unwrap();
 
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id.to_string(),
             "expression": "document.cookie",
         }),
-        request_id: "req_audit_fail_01".to_string(),
-        reason: "Test audit fail closed".to_string(),
-    };
+        "req_audit_fail_01",
+        "Test audit fail closed",
+    );
 
     let ctx = PartialPolicyContext::new(
         "devtools_console",
@@ -205,15 +205,15 @@ async fn test_eval_js_unknown_tab_fails_closed() {
 
     let fake_tab_id = Uuid::new_v4();
 
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": fake_tab_id.to_string(),
             "expression": "window.location.href",
         }),
-        request_id: "req_unknown_tab_01".to_string(),
-        reason: "Test non-existent tab".to_string(),
-    };
+        "req_unknown_tab_01",
+        "Test non-existent tab",
+    );
 
     let ctx = PartialPolicyContext::new(
         "devtools_console",
@@ -258,16 +258,16 @@ async fn test_eval_js_cancellation_semantics_inv09() {
         .await
         .unwrap();
 
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id.to_string(),
             "expression": "new Promise(() => {})", // Infinite pending promise
             "await_promise": true,
         }),
-        request_id: "req_cancel_01".to_string(),
-        reason: "Test cancellation token".to_string(),
-    };
+        "req_cancel_01",
+        "Test cancellation token",
+    );
 
     let ctx = PartialPolicyContext::new(
         "devtools_console",
@@ -341,17 +341,17 @@ async fn test_eval_js_nominal_v8_evaluation_via_toolbus() {
     tab_mgr.bind_cdp_target(tab_id, "mock_page_target_01").await.unwrap();
 
     // 1. Nominal arithmetic: "1 + 1" -> 2
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id.to_string(),
             "expression": "1 + 1",
             "return_by_value": true,
             "await_promise": true,
         }),
-        request_id: "req_nominal_01".to_string(),
-        reason: "Test nominal evaluate".to_string(),
-    };
+        "req_nominal_01",
+        "Test nominal evaluate",
+    );
 
     let ctx = PartialPolicyContext::new(
         "devtools_console",
@@ -365,17 +365,17 @@ async fn test_eval_js_nominal_v8_evaluation_via_toolbus() {
     assert_eq!(resp.output["result"]["value"], 2);
 
     // 2. Promise resolution: "Promise.resolve(42)" -> 42
-    let promise_req = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let promise_req = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id.to_string(),
             "expression": "Promise.resolve(42)",
             "return_by_value": true,
             "await_promise": true,
         }),
-        request_id: "req_nominal_02".to_string(),
-        reason: "Test promise evaluate".to_string(),
-    };
+        "req_nominal_02",
+        "Test promise evaluate",
+    );
 
     let promise_resp = tool_bus.dispatch(promise_req, ctx, CancellationToken::new()).await.expect("dispatch promise");
     assert_eq!(promise_resp.output["result"]["type"], "number");
@@ -420,15 +420,15 @@ async fn test_eval_js_exception_details_preservation() {
     tab_mgr.bind_cef_browser(tab_id, 2).await.unwrap();
     tab_mgr.bind_cdp_target(tab_id, "mock_page_target_02").await.unwrap();
 
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id.to_string(),
             "expression": "throw new Error('KAGE_TEST_ERROR')",
         }),
-        request_id: "req_exception_01".to_string(),
-        reason: "Test exception propagation".to_string(),
-    };
+        "req_exception_01",
+        "Test exception propagation",
+    );
 
     let ctx = PartialPolicyContext::new(
         "devtools_console",
@@ -476,15 +476,15 @@ async fn test_eval_js_stale_session_auto_recovery() {
     // Explicitly seed the session manager with a stale session id that the broker will reject on first evaluate
     session_mgr.seed_session_for_test(tab_id, "mock_page_target_stale", "stale_session_seed").await;
 
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id.to_string(),
             "expression": "trigger_stale_session_test",
         }),
-        request_id: "req_stale_01".to_string(),
-        reason: "Test stale session auto-recovery".to_string(),
-    };
+        "req_stale_01",
+        "Test stale session auto-recovery",
+    );
 
     let ctx = PartialPolicyContext::new(
         "devtools_console",
@@ -528,15 +528,15 @@ async fn test_eval_js_agent_context_sink_boundary_inv06() {
     tab_mgr.bind_cef_browser(tab_id, 4).await.unwrap();
     tab_mgr.bind_cdp_target(tab_id, "mock_page_target_boundary").await.unwrap();
 
-    let request = ToolRequest {
-        tool_id: "devtools.runtime.evaluate".to_string(),
-        args: json!({
+    let request = ToolRequest::new(
+        "devtools.runtime.evaluate",
+        json!({
             "tab_id": tab_id.to_string(),
             "expression": "generate_secret_token",
         }),
-        request_id: "req_boundary_01".to_string(),
-        reason: "Test secret boundary".to_string(),
-    };
+        "req_boundary_01",
+        "Test secret boundary",
+    );
 
     let ctx = PartialPolicyContext::new(
         "devtools_console",

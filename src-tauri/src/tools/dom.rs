@@ -80,11 +80,11 @@ impl KageTool for DomGetDocumentTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP DOM.getDocument failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -157,11 +157,11 @@ impl KageTool for DomQuerySelectorTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP DOM.querySelector failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -234,11 +234,11 @@ impl KageTool for DomQuerySelectorAllTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP DOM.querySelectorAll failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -302,11 +302,11 @@ impl KageTool for DomGetOuterHtmlTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP DOM.getOuterHTML failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -370,11 +370,11 @@ impl KageTool for DomGetAttributesTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP DOM.getAttributes failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }
@@ -438,11 +438,11 @@ impl KageTool for DomGetBoundsTool {
                     tool_id: self.tool_id().to_string(),
                     source: format!("CDP DOM.getBoxModel failed: {e}").into(),
                 })?;
-                Ok(ToolResponse {
-                    request_id: request.request_id.clone(),
+                Ok(ToolResponse::new(
+                    request.request_id.clone(),
                     output,
-                    elapsed_ms: started.elapsed().as_millis() as u64,
-                })
+                    started.elapsed().as_millis() as u64,
+                ))
             }
         }
     }

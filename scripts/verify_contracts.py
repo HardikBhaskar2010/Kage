@@ -23,6 +23,7 @@ def check_inv_01_no_direct_cef_in_core_or_ui():
     forbidden_dirs = [
         os.path.join(REPO_ROOT, "crates", "kage-core"),
         os.path.join(REPO_ROOT, "crates", "kage-context"),
+        os.path.join(REPO_ROOT, "crates", "kage-agent"),
         os.path.join(REPO_ROOT, "src-ui", "src"),
     ]
     cef_patterns = [
@@ -458,6 +459,82 @@ def check_verify_no_mocks():
     print("[PASS] Secondary regression scanner: Zero fake browser patterns detected.")
     return True
 
+def check_phase8_governed_tool_suite():
+    """Runs Phase 8 Governed KAGE Tool Suite & Capability Registry E2E suite."""
+    print("Running cargo test --test phase8_governed_tool_suite...", flush=True)
+    cargo_cmd = ["cargo", "test", "--target", "x86_64-pc-windows-msvc", "--test", "phase8_governed_tool_suite", "--", "--nocapture"]
+    if os.name == "nt":
+        ps1_script = os.path.join(REPO_ROOT, "scripts", "run_cargo.ps1")
+        if os.path.exists(ps1_script):
+            cargo_cmd = [
+                "powershell",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                ps1_script,
+                "test",
+                "--target",
+                "x86_64-pc-windows-msvc",
+                "--test",
+                "phase8_governed_tool_suite",
+                "--",
+                "--nocapture",
+            ]
+    result = subprocess.run(
+        cargo_cmd,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace'
+    )
+    if result.returncode != 0:
+        print("[FAIL] Phase 8 Governed KAGE Tool Suite test failed:", flush=True)
+        print(result.stdout, flush=True)
+        print(result.stderr, flush=True)
+        return False
+    print("[PASS] Phase 8: Canonical Tool Suite, Lineage, Registry & eval_js Prohibition passed.", flush=True)
+    return True
+
+def check_phase9_agent_runtime():
+    """Runs Phase 9 Autonomous Agent Runtime, Registry-Driven Discovery & Lineage E2E suite."""
+    print("Running cargo test -p kage-integration-tests --test phase9_agent_runtime...", flush=True)
+    cargo_cmd = ["cargo", "test", "--target", "x86_64-pc-windows-msvc", "-p", "kage-integration-tests", "--test", "phase9_agent_runtime", "--", "--nocapture"]
+    if os.name == "nt":
+        ps1_script = os.path.join(REPO_ROOT, "scripts", "run_cargo.ps1")
+        if os.path.exists(ps1_script):
+            cargo_cmd = [
+                "powershell",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                ps1_script,
+                "test",
+                "--target",
+                "x86_64-pc-windows-msvc",
+                "-p",
+                "kage-integration-tests",
+                "--test",
+                "phase9_agent_runtime",
+                "--",
+                "--nocapture",
+            ]
+    result = subprocess.run(
+        cargo_cmd,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace'
+    )
+    if result.returncode != 0:
+        print("[FAIL] Phase 9 Autonomous Agent Runtime test failed:", flush=True)
+        print(result.stdout, flush=True)
+        print(result.stderr, flush=True)
+        return False
+    print("[PASS] Phase 9: 10-Gate Autonomous Agent Runtime, Registry Discovery & STOP passed.", flush=True)
+    return True
+
 def main():
     print("=" * 80)
     print("           KAGE ARCHITECTURE CONTRACT CI VERIFICATION GATE                     ")
@@ -476,6 +553,8 @@ def main():
     phase4_cdp_ok = check_phase4_cdp_e2e()
     phase5_telemetry_ok = check_phase5_telemetry_e2e()
     phase7_profiles_ok = check_phase7_profiles_and_permissions()
+    phase8_tools_ok = check_phase8_governed_tool_suite()
+    phase9_agent_ok = check_phase9_agent_runtime()
 
     all_active_passed = (
         inv_01_ok
@@ -492,21 +571,23 @@ def main():
         and phase4_cdp_ok
         and phase5_telemetry_ok
         and phase7_profiles_ok
+        and phase8_tools_ok
+        and phase9_agent_ok
     )
 
     print("\n" + "=" * 80)
     print("                   KAGE ARCHITECTURE CONTRACT STATUS TABLE                     ")
     print("=" * 80)
-    print(f"  INV-01:    AI never directly accesses CEF                {'[VERIFIED (STATIC)]'     if inv_01_ok    else '[FAILED]'}")
-    print(f"  INV-02:    All mutating & capability actions pass ToolBus{'[VERIFIED (INTEGRATION + REAL CEF E2E)]' if inv_02_ok and phase4_cdp_ok else '[FAILED]'}")
-    print(f"  INV-03:    Web content is data, never authority          {'[VERIFIED (INTEGRATION)]' if integration_ok else '[FAILED]'}")
-    print(f"  INV-04:    Privileged mutations require policy approval  {'[VERIFIED (INTEGRATION)]' if integration_ok else '[FAILED]'}")
-    print(f"  INV-05:    Privileged mutations require audit commit     {'[VERIFIED (INTEGRATION)] (Two-Stage Fail-Closed)' if integration_ok else '[FAILED]'}")
-    print(f"  INV-06:    Unsanitized secret output never crosses agent boundary {'[VERIFIED (INTEGRATION)] (Sanitizer + Sink Boundary)' if integration_ok else '[FAILED]'}")
+    print(f"  INV-01:    AI never directly accesses CEF                {'[VERIFIED (STATIC + PHASE 8 + PHASE 9)]' if inv_01_ok and phase8_tools_ok and phase9_agent_ok else '[FAILED]'}")
+    print(f"  INV-02:    All mutating & capability actions pass ToolBus{'[VERIFIED (INTEGRATION + REAL CEF E2E + PHASE 8 + PHASE 9)]' if inv_02_ok and phase4_cdp_ok and phase8_tools_ok and phase9_agent_ok else '[FAILED]'}")
+    print(f"  INV-03:    Web content is data, never authority          {'[VERIFIED (PROMPT BOUNDARY + GATE-09-E)]' if phase9_agent_ok else '[FAILED]'}")
+    print(f"  INV-04:    Privileged mutations require policy approval  {'[VERIFIED (INTEGRATION + GATE-09-I)]' if integration_ok and phase9_agent_ok else '[FAILED]'}")
+    print(f"  INV-05:    Privileged mutations require audit commit     {'[VERIFIED (INTEGRATION + GATE-09-B)] (Two-Stage Fail-Closed)' if integration_ok and phase9_agent_ok else '[FAILED]'}")
+    print(f"  INV-06:    Unsanitized secret output never crosses agent boundary {'[VERIFIED (INTEGRATION + GATE-09-E)] (Sanitizer + Sink Boundary)' if integration_ok and phase9_agent_ok else '[FAILED]'}")
     print(f"  INV-07:    React never directly controls CDP             {'[VERIFIED (STATIC)]'     if inv_07_ok    else '[FAILED]'}")
-    print(f"  INV-08:    Every action has an observable result         [NOT IMPLEMENTED] (Planned Phase 11 Verifier)")
-    print(f"  INV-09:    STOP prevents subsequent actions              {'[VERIFIED (INTEGRATION)] (Caller Cancellation)' if integration_ok else '[FAILED]'}")
-    print(f"  INV-10:    Every tab has (TabId, ProfileId, CefBrowserId){'[VERIFIED (INTEGRATION)]' if tab_lifecycle_ok and phase3_e2e_ok else '[FAILED]'}")
+    print(f"  INV-08:    Every action has an observable result         [NOT IMPLEMENTED] (Planned Phase 10 Verifier)")
+    print(f"  INV-09:    STOP prevents subsequent actions              {'[VERIFIED (INTEGRATION + GATE-09-G)] (Agent Root Token)' if phase9_agent_ok else '[FAILED]'}")
+    print(f"  INV-10:    Every tab has (TabId, ProfileId, CefBrowserId){'[VERIFIED (INTEGRATION)]' if tab_lifecycle_ok and phase3_e2e_ok and phase8_tools_ok else '[FAILED]'}")
     print(f"  INV-11A:   Renderer failure fails closed                 {'[VERIFIED (REAL CEF E2E)]' if phase3_e2e_ok else '[FAILED]'}")
     print(f"  INV-11B:   CEF engine host failure fails closed          {'[VERIFIED (ENGINE STATE INTEGRATION)]' if integration_ok else '[FAILED]'}")
     print(f"  INV-12:    Browser & surface identity explicit, never inferred {'[VERIFIED (Pre/Post CEF Identity & CDP Binding)]' if phase3_e2e_ok and phase4_cdp_ok else '[FAILED]'}")
@@ -540,19 +621,25 @@ def main():
     print(f"    PHASE 4  — Empirical CDP DevTools Protocol:    {'SEALED (100%)' if phase4_cdp_ok else 'PENDING'}")
     print(f"    PHASE 5  — Live Telemetry & Context Streaming: {'SEALED (100%)' if phase5_telemetry_ok else 'PENDING'}")
     print(f"    PHASE 7  — Profiles, Storage & Permissions:     {'SEALED (100%)' if phase7_profiles_ok else 'PENDING'}")
+    print(f"    PHASE 8  — Governed Tool Suite & Capabilities:  {'SEALED (100%)' if phase8_tools_ok else 'PENDING'}")
+    print(f"    PHASE 9  — Autonomous Agent Runtime & Context: {'SEALED (100%)' if phase9_agent_ok else 'PENDING'}")
+    print("    PHASE 10 — Verified Autonomy, STOP & Recovery: PENDING")
+    print("    PHASE 11 — KAGE MVP Release & Hardened Shell:  PENDING")
     print(f"    OVERALL PHASE 2: {'SEALED (100%)' if (phase2b_ok and cef_03b_d_ok) else 'PRODUCTION-FUNCTIONALLY COMPLETE'}")
     print(f"    OVERALL PHASE 3: {'SEALED (100%)' if phase3_e2e_ok else 'PENDING'}")
     print(f"    OVERALL PHASE 4: {'SEALED (100%)' if phase4_cdp_ok else 'PENDING'}")
     print(f"    OVERALL PHASE 5: {'SEALED (100%)' if phase5_telemetry_ok else 'PENDING'}")
     print(f"    OVERALL PHASE 7: {'SEALED (100%)' if phase7_profiles_ok else 'PENDING'}")
+    print(f"    OVERALL PHASE 8: {'SEALED (100%)' if phase8_tools_ok else 'PENDING'}")
+    print(f"    OVERALL PHASE 9: {'SEALED (100%)' if phase9_agent_ok else 'PENDING'}")
     print("    EVAL_JS GOVERNANCE IMPLEMENTATION:             COMPLETE (100%)")
     print(f"    INV-02 GOVERNANCE PIPELINE:                    {'VERIFIED (INTEGRATION + REAL CEF E2E)' if inv_02_ok and phase4_cdp_ok else 'PENDING'}")
-    print("    PHASE 1-7 BROWSER FOUNDATION:                  SUBSTANTIALLY COMPLETE")
-    print("    FULL KAGE AUTONOMOUS AGENT CONTROL PLANE:      IN PROGRESS (Phase 11 INV-08 Verifier Pending)")
+    print("    PHASE 1-9 CONTROL PLANE CAPABILITIES:          SUBSTANTIALLY COMPLETE")
+    print("    FULL KAGE AUTONOMOUS AGENT CONTROL PLANE:      IN PROGRESS (Phase 10 Verifier Next)")
     print("=" * 80)
 
     if all_active_passed:
-        print("[SUCCESS] All Phase 1, 2, 3, 4, 5, and 7 Active Architecture Contracts empirically verified and SEALED (100%).")
+        print("[SUCCESS] All Phase 1, 2, 3, 4, 5, 7, 8, and 9 Active Architecture Contracts empirically verified and SEALED (100%).")
         sys.exit(0)
     else:
         print("[FAILED] Architecture Contract Violations Detected in Active Gates!")

@@ -168,7 +168,7 @@ $$\text{NO DURABLY COMMITTED AUDIT INTENT} \implies \text{NO PRIVILEGED ACTION}$
 * **Tamper-Evidence vs. Immutability:**
   * The local SHA-256 hash-chain provides mathematical **tamper-evidence** across all preserved records: modifying any field or row breaks the `prev_hash` / `row_hash` linkage.
   * *Host Instance Isolation:* Every audit record carries an explicit `host_instance_id` to correlate entries with specific process lifecycles and disambiguate concurrent or restarted instances.
-  * *External Anchoring (Planned Phase 11):* Local hash-chains detect tampering within the retained history, but cannot prevent external tail truncation or entire database deletion without an external truth anchor (e.g. OS-protected signed checkpoints or remote witness logs).
+  * *External Anchoring (Planned Phase 11 MVP Release):* Local hash-chains detect tampering within the retained history, but cannot prevent external tail truncation or entire database deletion without an external truth anchor (e.g. OS-protected signed checkpoints or remote witness logs).
 * **Enforcement Mechanism:**
   * `ToolBus::dispatch` commits an `AuditStatus::Started` intent record *before* calling `tool.execute()`.
   * If `audit_sink.append()` fails or the SQLite transaction aborts, `ToolBus` immediately returns `ToolError::AuditFailure` without executing the tool.
@@ -308,7 +308,7 @@ $$\text{NO DURABLY COMMITTED AUDIT INTENT} \implies \text{NO PRIVILEGED ACTION}$
 | **INV-05** | Privileged mutations require audit commit | Fail-closed test: `contract_gate_05_privileged_mutations_fail_closed_without_audit` | VERIFIED (INTEGRATION) |
 | **INV-06** | Secrets never enter LLM context | Sanitizer test: `contract_gate_06_secrets_never_enter_llm_context` | VERIFIED (INTEGRATION) |
 | **INV-07** | React never directly controls CDP | Static frontend grep: No raw WebSockets in `src-ui` | VERIFIED (STATIC) |
-| **INV-08** | Every agent action has observable result | Verifier test: Planned Phase 11 Verifier | NOT IMPLEMENTED |
+| **INV-08** | Every agent action has observable result | Verifier test: Planned Phase 10 Verifier | NOT IMPLEMENTED |
 | **INV-09** | STOP prevents subsequent actions | Cancellation test: `contract_gate_09_stop_prevents_subsequent_actions` | VERIFIED (INTEGRATION) |
 | **INV-10** | Tab has (TabId, ProfileId, CefBrowserId) | Lifecycle test: `contract_gate_inv_10_tab_explicit_profile_binding` | VERIFIED (INTEGRATION) |
 | **INV-11A** | Renderer failure fails closed | Fail-closed test: `test_renderer_crash_fails_closed_inv_11a` | VERIFIED (CONTROL-PLANE INTEGRATION) (Real CEF E2E Pending) |

@@ -1,0 +1,21 @@
+[package]
+name = "kage-agent"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Autonomous Agent Runtime, Registry-Driven Planner, and Model Abstraction for KAGE"
+
+[dependencies]
+kage-core = { path = "../kage-core" }
+kage-context = { path = "../kage-context" }
+kage-storage = { path = "../kage-storage" }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7" }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+uuid = { version = "1.10", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }

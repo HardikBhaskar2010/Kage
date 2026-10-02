@@ -16,6 +16,8 @@ pub mod policy;
 pub mod sanitizer;
 pub mod bus;
 pub mod audit;
+pub mod lineage;
+pub mod registry;
 
 // Re-export primary API surface.
 pub use tool::{KageTool, ToolRequest, ToolResponse, ToolError};
@@ -23,3 +25,11 @@ pub use policy::{PolicyEngine, PermissionTier, PolicyDecision, PolicyContext, Au
 pub use sanitizer::SecretSanitizer;
 pub use bus::{ToolBus, PartialPolicyContext};
 pub use audit::{AuditSink, AuditVerifier, AuditReader, CanonicalAuditRecord, CanonicalAuditEntry, ActorType, AuditStatus, AuditError as CoreAuditError};
+pub use lineage::{
+    AgentTaskId, PlanStepId, ToolRequestId, ToolExecutionId, AuditRecordId, VerificationId,
+    ExecutionStatus, ExecutionLineage,
+};
+pub use registry::{
+    CapabilityRegistry, ToolMetadata, ToolCategory, IdempotencyClassification, RetryPolicy,
+    DeclarativeContract,
+};

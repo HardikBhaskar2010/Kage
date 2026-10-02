@@ -2033,6 +2033,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kage-agent"
+version = "0.2.1"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "kage-context",
+ "kage-core",
+ "kage-storage",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "kage-browser"
 version = "0.2.1"
 dependencies = [
@@ -2156,6 +2173,7 @@ dependencies = [
  "cef",
  "chrono",
  "futures-util",
+ "kage-agent",
  "kage-browser",
  "kage-cdp",
  "kage-context",
