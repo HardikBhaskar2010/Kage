@@ -90,6 +90,31 @@ impl TabManager {
             let mut ident = tab.identity.write().await;
             ident.profile_id = target_profile.clone();
         }
+
+        // Replace Arc<Tab> in self.tabs so tab.profile_id reflects the new target_profile
+        {
+            let mut tabs = self.tabs.write().await;
+            if let Some(existing) = tabs.remove(&tab_id) {
+                let updated = Arc::new(Tab {
+                    id: existing.id,
+                    profile_id: target_profile.clone(),
+                    identity: existing.identity.clone(),
+                    cdp: existing.cdp.clone(),
+                    surface_id: existing.surface_id.clone(),
+                    lifecycle: existing.lifecycle.clone(),
+                    navigation: existing.navigation.clone(),
+                    health: existing.health.clone(),
+                    url: existing.url.clone(),
+                    title: existing.title.clone(),
+                    can_go_back: existing.can_go_back.clone(),
+                    can_go_forward: existing.can_go_forward.clone(),
+                    active_navigation_record: existing.active_navigation_record.clone(),
+                    renderer_epoch: existing.renderer_epoch.clone(),
+                });
+                tabs.insert(tab_id, updated);
+            }
+        }
+
         info!(tab_id = %tab_id, target_profile = %target_profile, "tab profile escalated");
         Ok(())
     }

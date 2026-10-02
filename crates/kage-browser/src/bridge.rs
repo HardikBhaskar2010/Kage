@@ -84,12 +84,28 @@ impl CefTabBridge {
             unclaimed_browsers: unclaimed_browsers.clone(),
         });
 
-        tokio::spawn(Self::event_loop(
-            receiver,
-            tab_manager,
-            pending_tabs,
-            unclaimed_browsers,
-        ));
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(Self::event_loop(
+                receiver,
+                tab_manager,
+                pending_tabs,
+                unclaimed_browsers,
+            ));
+        } else {
+            std::thread::spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    rt.block_on(Self::event_loop(
+                        receiver,
+                        tab_manager,
+                        pending_tabs,
+                        unclaimed_browsers,
+                    ));
+                }
+            });
+        }
 
         bridge
     }
@@ -101,11 +117,24 @@ impl CefTabBridge {
         if let Ok(mut unclaimed) = self.unclaimed_browsers.lock() {
             if let Some(browser_id) = unclaimed.pop_front() {
                 let tm = tab_manager.clone();
-                tokio::spawn(async move {
+                let task = async move {
                     if let Err(e) = tm.bind_cef_browser(tab_id, browser_id).await {
                         error!(tab_id = %tab_id, browser_id, "Failed to bind unclaimed browser: {e}");
                     }
-                });
+                };
+
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(task);
+                } else {
+                    std::thread::spawn(move || {
+                        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                        {
+                            rt.block_on(task);
+                        }
+                    });
+                }
                 return;
             }
         }

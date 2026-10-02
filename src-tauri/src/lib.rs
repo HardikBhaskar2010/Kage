@@ -149,7 +149,9 @@ pub fn run() {
     let tab_manager = Arc::new(kage_browser::TabManager::new(profile_manager, event_bus));
 
     // Connect CefTabBridge to observe native CEF lifecycle and route events to TabManager
-    let bridge = kage_browser::CefTabBridge::new(tab_manager.clone());
+    let bridge = tauri::async_runtime::block_on(async {
+        kage_browser::CefTabBridge::new(tab_manager.clone())
+    });
     cef_runtime.add_observer(bridge.clone());
 
     // Register governed Developer Plane tools on ToolBus (INV-02)

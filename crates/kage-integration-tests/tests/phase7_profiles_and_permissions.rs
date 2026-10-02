@@ -14,11 +14,11 @@ use tempfile::TempDir;
 use kage_browser::permission::{PermissionDecision, PermissionManager, PermissionType};
 use kage_browser::profile::{
     record_session_escalation_intent, record_session_escalation_outcome, ProfileKind,
-    ProfileManager,
+    ProfileMetadata, ProfileManager,
 };
 use kage_browser::{BrowserError, BrowserEventBus, ProfileId, TabManager};
-use kage_core::audit::AuditSink;
-use kage_storage::{AuditDb, AuditReader, AuditVerifier};
+use kage_core::audit::{AuditReader, AuditSink, AuditVerifier};
+use kage_storage::AuditDb;
 
 // ─── GATE-07-A: Profile Lifecycle & Manifest Persistence ─────────────────────
 
@@ -42,21 +42,19 @@ async fn test_gate_07_a_profile_lifecycle_and_persistence() {
 
     // 2. Register a new custom profile
     let custom_id = ProfileId("work_engineering".to_string());
+    let mut custom_meta = ProfileMetadata::new(custom_id.clone(), "Engineering Workspace", ProfileKind::Work);
+    custom_meta.color = "#10B981".to_string();
+    custom_meta.icon = "terminal".to_string();
+
     let created = pm
-        .create_profile(
-            custom_id.clone(),
-            "Engineering Workspace",
-            ProfileKind::Work,
-            Some("#10B981".to_string()),
-            Some("terminal".to_string()),
-        )
+        .create_profile(custom_meta)
         .await
         .expect("Create custom profile");
 
-    assert_eq!(created.id, custom_id.0);
-    assert_eq!(created.name, "Engineering Workspace");
-    assert_eq!(created.kind, ProfileKind::Work);
-    assert_eq!(created.color, "#10B981");
+    assert_eq!(created.id, custom_id);
+    assert_eq!(created.metadata.name, "Engineering Workspace");
+    assert_eq!(created.metadata.kind, ProfileKind::Work);
+    assert_eq!(created.metadata.color, "#10B981");
 
     // Verify manifest file exists on disk
     let manifest_path = base_profiles_dir.join("profiles.json");
@@ -79,7 +77,7 @@ async fn test_gate_07_a_profile_lifecycle_and_persistence() {
         .expect_err("Deleting personal profile must fail");
     match delete_personal_err {
         BrowserError::ProfileError(msg) => {
-            assert!(msg.contains("Cannot delete default personal profile"));
+            assert!(msg.contains("Cannot delete the default Personal profile"));
         }
         other => panic!("Expected ProfileError, got {other:?}"),
     }
@@ -106,35 +104,33 @@ async fn test_gate_07_b_ephemeral_agent_sandbox_wipe() {
 
     // 1. Create an ephemeral agent sandbox profile
     let sandbox_id = ProfileId("agent_sandbox_ephemeral_test".to_string());
-    let sandbox_meta = pm
-        .create_profile(
-            sandbox_id.clone(),
-            "Disposable Agent Sandbox",
-            ProfileKind::AgentSandbox,
-            None,
-            None,
-        )
+    let sandbox_meta = ProfileMetadata::new(sandbox_id.clone(), "Disposable Agent Sandbox", ProfileKind::AgentSandbox);
+
+    let created_profile = pm
+        .create_profile(sandbox_meta)
         .await
         .expect("Create sandbox profile");
 
-    assert!(sandbox_meta.is_ephemeral, "Agent sandbox must be flagged ephemeral");
+    assert!(created_profile.metadata.is_ephemeral, "Agent sandbox must be flagged ephemeral");
 
     // 2. Locate physical disk directories for this profile
     let profile = pm
-        .get_profile(&sandbox_id)
+        .get_or_create(&sandbox_id)
         .await
         .expect("Profile instance must exist");
 
-    let storage_dir = profile.storage_dir.clone();
+    let root_dir = profile.root_dir.clone();
     let cache_dir = profile.cache_dir.clone();
+    let cookie_dir = profile.cookie_store_dir.clone();
 
     // Verify directories were created
-    assert!(storage_dir.exists(), "Storage dir must exist on disk");
+    assert!(root_dir.exists(), "Root dir must exist on disk");
     assert!(cache_dir.exists(), "Cache dir must exist on disk");
+    assert!(cookie_dir.exists(), "Cookie dir must exist on disk");
 
     // 3. Write simulated session artifact markers (cookies, auth tokens, cache files)
-    let marker_cookie = storage_dir.join("Cookies.sqlite");
-    let marker_token = storage_dir.join("auth_tokens.json");
+    let marker_cookie = cookie_dir.join("Cookies.sqlite");
+    let marker_token = root_dir.join("auth_tokens.json");
     let marker_cache = cache_dir.join("cached_asset.bin");
 
     std::fs::write(&marker_cookie, b"AGENT_SECRET_SESSION_COOKIE").expect("write cookie");
@@ -149,8 +145,9 @@ async fn test_gate_07_b_ephemeral_agent_sandbox_wipe() {
     profile.wipe_disk().expect("Physical disk wipe must succeed");
 
     // 5. Measure and verify physical absence of directories and files
-    assert!(!storage_dir.exists(), "Storage directory must be physically deleted from disk");
+    assert!(!root_dir.exists(), "Root directory must be physically deleted from disk");
     assert!(!cache_dir.exists(), "Cache directory must be physically deleted from disk");
+    assert!(!cookie_dir.exists(), "Cookie directory must be physically deleted from disk");
     assert!(!marker_cookie.exists(), "Marker cookie file must not exist");
     assert!(!marker_token.exists(), "Marker token file must not exist");
 
@@ -238,7 +235,8 @@ async fn test_gate_07_c_origin_permission_matrix_and_normalization() {
 
 #[tokio::test]
 async fn test_gate_07_d_credential_broker_escalation_and_audit() {
-    let audit_db: Arc<dyn AuditSink> = Arc::new(AuditDb::open_in_memory().expect("open audit db"));
+    let audit_db = Arc::new(AuditDb::open_in_memory().expect("open audit db"));
+    let audit_sink: Arc<dyn AuditSink> = audit_db.clone();
     let tab_id = kage_browser::TabId::new();
     let source_profile = ProfileId::agent_sandbox();
     let target_profile = ProfileId::personal();
@@ -247,7 +245,7 @@ async fn test_gate_07_d_credential_broker_escalation_and_audit() {
 
     // 1. Two-stage audit commitment: Record Intent (Started)
     let seq_intent = record_session_escalation_intent(
-        &audit_db,
+        &audit_sink,
         tab_id,
         &source_profile,
         &target_profile,
@@ -261,7 +259,7 @@ async fn test_gate_07_d_credential_broker_escalation_and_audit() {
 
     // 2. Case A: User rejects escalation -> Denied status committed
     let seq_denied = record_session_escalation_outcome(
-        &audit_db,
+        &audit_sink,
         tab_id,
         &target_profile,
         req_id,
@@ -276,7 +274,7 @@ async fn test_gate_07_d_credential_broker_escalation_and_audit() {
     // 3. Case B: Another request is authorized by user
     let req_id_2 = "req_esc_002";
     let seq_intent_2 = record_session_escalation_intent(
-        &audit_db,
+        &audit_sink,
         tab_id,
         &source_profile,
         &target_profile,
@@ -287,7 +285,7 @@ async fn test_gate_07_d_credential_broker_escalation_and_audit() {
     .expect("Record intent 2");
 
     let seq_approved = record_session_escalation_outcome(
-        &audit_db,
+        &audit_sink,
         tab_id,
         &target_profile,
         req_id_2,
@@ -300,14 +298,11 @@ async fn test_gate_07_d_credential_broker_escalation_and_audit() {
     assert!(seq_approved > seq_intent_2);
 
     // 4. Verify cryptographic SHA-256 hash chaining of audit trail
-    // Downcast to AuditDb for verification
-    // Since AuditDb is in memory, we can cast or query via AuditReader
-    // Let's create an in-memory AuditDb instance directly to use AuditVerifier
-    let direct_db = AuditDb::open_in_memory().expect("direct db");
-    let arc_db: Arc<dyn AuditSink> = Arc::new(direct_db);
+    let chain_audit_db = Arc::new(AuditDb::open_in_memory().expect("chain audit db"));
+    let chain_sink: Arc<dyn AuditSink> = chain_audit_db.clone();
 
     record_session_escalation_intent(
-        &arc_db,
+        &chain_sink,
         tab_id,
         &source_profile,
         &target_profile,
@@ -318,7 +313,7 @@ async fn test_gate_07_d_credential_broker_escalation_and_audit() {
     .unwrap();
 
     record_session_escalation_outcome(
-        &arc_db,
+        &chain_sink,
         tab_id,
         &target_profile,
         "chain_req_01",
@@ -329,12 +324,9 @@ async fn test_gate_07_d_credential_broker_escalation_and_audit() {
     .unwrap();
 
     // Verify sequence & records
-    let recent = AuditReader::get_recent_records(
-        unsafe { &*(&*arc_db as *const dyn AuditSink as *const AuditDb) },
-        10,
-    )
-    .await
-    .expect("Fetch records");
+    let recent = AuditReader::get_recent_records(&*chain_audit_db, 10)
+        .await
+        .expect("Fetch records");
 
     assert_eq!(recent.len(), 2);
     assert_eq!(recent[0].status, "success");
@@ -343,11 +335,9 @@ async fn test_gate_07_d_credential_broker_escalation_and_audit() {
     assert_eq!(recent[1].tool_id, "profile.escalate_session");
 
     // Cryptographic audit chain verification
-    AuditVerifier::verify_chain(
-        unsafe { &*(&*arc_db as *const dyn AuditSink as *const AuditDb) },
-    )
-    .await
-    .expect("Cryptographic hash chain must be 100% valid and untampered");
+    AuditVerifier::verify_chain(&*chain_audit_db)
+        .await
+        .expect("Cryptographic hash chain must be 100% valid and untampered");
 }
 
 // ─── GATE-07-E: Tab & Profile Binding Invariant (INV-10) ──────────────────────

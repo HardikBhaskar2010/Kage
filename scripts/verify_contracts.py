@@ -407,6 +407,43 @@ def check_phase5_telemetry_e2e():
     print("[PASS] Phase 5 E2E: DOM pruning, sub-2ms context swapping & untrusted framing passed.", flush=True)
     return True
 
+def check_phase7_profiles_and_permissions():
+    """GATE-07: Phase 7 Profiles, Storage & Origin Permission State integration tests."""
+    print("[RUN] Running Phase 7 Profiles, Storage & Permission State test suite...", flush=True)
+    cargo_cmd = ["cargo", "test", "--target", "x86_64-pc-windows-msvc", "--test", "phase7_profiles_and_permissions", "--", "--nocapture"]
+    if sys.platform == "win32":
+        ps1_script = os.path.join(REPO_ROOT, "scripts", "run_cargo.ps1")
+        if os.path.exists(ps1_script):
+            cargo_cmd = [
+                "powershell",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                ps1_script,
+                "test",
+                "--target",
+                "x86_64-pc-windows-msvc",
+                "--test",
+                "phase7_profiles_and_permissions",
+                "--",
+                "--nocapture",
+            ]
+    result = subprocess.run(
+        cargo_cmd,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace'
+    )
+    if result.returncode != 0:
+        print("[FAIL] Phase 7 Profiles & Permission State test failed:", flush=True)
+        print(result.stdout, flush=True)
+        print(result.stderr, flush=True)
+        return False
+    print("[PASS] Phase 7: Profile lifecycle, Ephemeral Sandbox wipe, Origin matrix & Credential Broker passed.", flush=True)
+    return True
+
 def check_verify_no_mocks():
     """Runs the secondary scanner scripts/verify_no_mocks.py to ensure zero fake browser stubs."""
     scanner = os.path.join(REPO_ROOT, "scripts", "verify_no_mocks.py")
@@ -438,6 +475,7 @@ def main():
     phase3_e2e_ok = check_phase3_e2e()
     phase4_cdp_ok = check_phase4_cdp_e2e()
     phase5_telemetry_ok = check_phase5_telemetry_e2e()
+    phase7_profiles_ok = check_phase7_profiles_and_permissions()
 
     all_active_passed = (
         inv_01_ok
@@ -453,6 +491,7 @@ def main():
         and phase3_e2e_ok
         and phase4_cdp_ok
         and phase5_telemetry_ok
+        and phase7_profiles_ok
     )
 
     print("\n" + "=" * 80)
@@ -500,18 +539,20 @@ def main():
     print(f"    PHASE 3  — Browser Lifecycle & Control Plane:  {'SEALED (100%)' if phase3_e2e_ok else 'PENDING'}")
     print(f"    PHASE 4  — Empirical CDP DevTools Protocol:    {'SEALED (100%)' if phase4_cdp_ok else 'PENDING'}")
     print(f"    PHASE 5  — Live Telemetry & Context Streaming: {'SEALED (100%)' if phase5_telemetry_ok else 'PENDING'}")
+    print(f"    PHASE 7  — Profiles, Storage & Permissions:     {'SEALED (100%)' if phase7_profiles_ok else 'PENDING'}")
     print(f"    OVERALL PHASE 2: {'SEALED (100%)' if (phase2b_ok and cef_03b_d_ok) else 'PRODUCTION-FUNCTIONALLY COMPLETE'}")
     print(f"    OVERALL PHASE 3: {'SEALED (100%)' if phase3_e2e_ok else 'PENDING'}")
     print(f"    OVERALL PHASE 4: {'SEALED (100%)' if phase4_cdp_ok else 'PENDING'}")
     print(f"    OVERALL PHASE 5: {'SEALED (100%)' if phase5_telemetry_ok else 'PENDING'}")
+    print(f"    OVERALL PHASE 7: {'SEALED (100%)' if phase7_profiles_ok else 'PENDING'}")
     print("    EVAL_JS GOVERNANCE IMPLEMENTATION:             COMPLETE (100%)")
     print(f"    INV-02 GOVERNANCE PIPELINE:                    {'VERIFIED (INTEGRATION + REAL CEF E2E)' if inv_02_ok and phase4_cdp_ok else 'PENDING'}")
-    print("    PHASE 1-5 BROWSER FOUNDATION:                  SUBSTANTIALLY COMPLETE")
+    print("    PHASE 1-7 BROWSER FOUNDATION:                  SUBSTANTIALLY COMPLETE")
     print("    FULL KAGE AUTONOMOUS AGENT CONTROL PLANE:      IN PROGRESS (Phase 11 INV-08 Verifier Pending)")
     print("=" * 80)
 
     if all_active_passed:
-        print("[SUCCESS] All Phase 1, 2, 3, 4, and 5 Active Architecture Contracts empirically verified and SEALED (100%).")
+        print("[SUCCESS] All Phase 1, 2, 3, 4, 5, and 7 Active Architecture Contracts empirically verified and SEALED (100%).")
         sys.exit(0)
     else:
         print("[FAILED] Architecture Contract Violations Detected in Active Gates!")

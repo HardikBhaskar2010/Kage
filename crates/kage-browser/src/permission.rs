@@ -129,11 +129,24 @@ impl PermissionManager {
         }
     }
 
-    /// Normalize an origin string for deterministic lookup (trim trailing slash, lowercase).
+    /// Normalize an origin string for deterministic lookup (scheme://host[:port], lowercase, no path).
     pub fn normalize_origin(origin: &str) -> String {
         let trimmed = origin.trim();
-        let without_slash = trimmed.strip_suffix('/').unwrap_or(trimmed);
-        without_slash.to_lowercase()
+        let lower = trimmed.to_lowercase();
+        if let Some(pos) = lower.find("://") {
+            let after_scheme = &lower[pos + 3..];
+            let host_port = match after_scheme.find(|c| c == '/' || c == '?' || c == '#') {
+                Some(end) => &after_scheme[..end],
+                None => after_scheme,
+            };
+            format!("{}://{}", &lower[..pos], host_port)
+        } else {
+            let host_port = match lower.find(|c| c == '/' || c == '?' || c == '#') {
+                Some(end) => &lower[..end],
+                None => &lower,
+            };
+            format!("https://{}", host_port)
+        }
     }
 
     /// Query the permission decision for a given (profile_id, origin, permission_type).
