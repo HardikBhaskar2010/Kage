@@ -23,6 +23,8 @@ pub enum ExecutionError {
     Tool(#[from] ToolError),
     #[error("Execution cancelled by user or system STOP")]
     Cancelled,
+    #[error("Execution blocked by active human takeover: {tool_id}")]
+    HumanTakeoverActive { tool_id: String },
     #[error("Permission denied by policy engine: {decision}")]
     PermissionDenied { decision: String },
 }
@@ -69,7 +71,7 @@ impl StepExecutor {
             caller_id: "agent_runtime".to_string(),
             session_id: format!("agent_sess_{}", task.task_id),
             workspace_id: "default_workspace".to_string(),
-            session_granted: false, // Default to unprivileged sandbox
+            session_granted: task.session_granted,
             actor: Some(ActorType::Agent),
             profile_id: Some(task.profile_id.clone()),
             tab_id: task.starting_tab_id.clone(),
@@ -93,6 +95,18 @@ impl StepExecutor {
                 step.fail(err_msg);
                 step.status = crate::plan::StepStatus::Denied;
                 Err(ExecutionError::PermissionDenied { decision })
+            }
+            Err(ToolError::HumanTakeoverActive { tool_id }) => {
+                let err_msg = format!("Tool '{}' dispatch blocked: human takeover active", tool_id);
+                step.fail(err_msg);
+                step.status = crate::plan::StepStatus::Denied;
+                Err(ExecutionError::HumanTakeoverActive { tool_id })
+            }
+            Err(ToolError::DeveloperToolProhibited { tool_id }) => {
+                let err_msg = format!("Developer tool prohibited for autonomous agent: {}", tool_id);
+                step.fail(err_msg.clone());
+                step.status = crate::plan::StepStatus::Denied;
+                Err(ExecutionError::PermissionDenied { decision: err_msg })
             }
             Err(err) => {
                 let err_msg = err.to_string();

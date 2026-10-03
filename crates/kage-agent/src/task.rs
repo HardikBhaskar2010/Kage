@@ -16,6 +16,10 @@ pub enum TaskState {
     Executing,
     /// Agent is paused awaiting user confirmation or policy escalation.
     AwaitingApproval,
+    /// Task has been paused for manual human takeover (Escape Hatch).
+    HumanTakeover,
+    /// Task has paused awaiting user guidance on a non-idempotent action or unknown outcome.
+    AwaitingGuidance,
     /// Task successfully achieved its completion condition.
     Completed,
     /// Task was cancelled / stopped by the user or system.
@@ -37,6 +41,8 @@ pub struct AgentTask {
     pub starting_tab_id: Option<String>,
     /// Current execution state.
     pub state: TaskState,
+    /// Whether session-scoped mutation permissions have been granted to this task.
+    pub session_granted: bool,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last state update timestamp.
@@ -54,11 +60,18 @@ impl AgentTask {
             goal: goal.into(),
             profile_id: profile_id.into(),
             starting_tab_id: None,
+            session_granted: false,
             state: TaskState::Created,
             created_at: now,
             updated_at: now,
             metadata: serde_json::json!({}),
         }
+    }
+
+    /// Explicitly grant or revoke session-scoped mutation permissions for this task.
+    pub fn with_session_grant(mut self, granted: bool) -> Self {
+        self.session_granted = granted;
+        self
     }
 
     /// Bind a starting tab to the task.

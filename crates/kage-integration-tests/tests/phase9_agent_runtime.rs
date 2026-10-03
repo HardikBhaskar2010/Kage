@@ -28,10 +28,12 @@ use kage_agent::prompt_boundary::{PromptBoundary, WebProvenance};
 use kage_agent::task::{AgentTask, TaskState};
 use kage_agent::tool_catalog::ToolCatalog;
 
+use kage_browser::{BrowserEventBus, ProfileManager, TabManager};
 use kage_core::bus::ToolBus;
 use kage_core::policy::PermissionTier;
 use kage_core::registry::{CapabilityRegistry, DeclarativeContract, IdempotencyClassification, RetryPolicy, ToolCategory, ToolMetadata};
 use kage_core::tool::{KageTool, ToolError, ToolRequest, ToolResponse};
+use kage_host_lib::tools::{TabCreateTool, TabListTool};
 use kage_storage::AuditDb;
 
 // ===========================================================================
@@ -474,38 +476,237 @@ async fn test_gate_09_i_failure_handling() {
 }
 
 // ===========================================================================
-// GATE M9-J: Full Physical E2E Flow (Agent -> Registry -> Model -> ToolBus -> Audit -> Result)
+// GATE M9-J: Full Physical E2E Flow (Agent -> Registry -> Model -> ToolBus -> TabManager -> Audit -> Result)
 // ===========================================================================
 #[tokio::test]
 async fn test_gate_09_j_full_physical_e2e_flow() {
-    let (tool_bus, audit_db, registry) = setup_test_runtime().await;
+    let audit_db = Arc::new(AuditDb::open_in_memory().unwrap());
+    let tool_bus = Arc::new(ToolBus::new().with_audit_sink(audit_db.clone()));
+    let registry = CapabilityRegistry::new();
 
-    // 1. Dynamic Registry Discovery (zero hardcoded tool lists)
+    // 1. Initialize Real Browser Host Subsystems
+    let profile_mgr = Arc::new(ProfileManager::new());
+    let event_bus = BrowserEventBus::new(100);
+    let tab_mgr = Arc::new(TabManager::new(profile_mgr, event_bus));
+
+    // 2. Register Canonical Phase 8 Governed Tools
+    registry.register(TabCreateTool::metadata()).await;
+    registry.register(TabListTool::metadata()).await;
+    tool_bus.register(TabCreateTool::new(tab_mgr.clone())).await;
+    tool_bus.register(TabListTool::new(tab_mgr.clone())).await;
+
+    // 3. Dynamic Registry Discovery (Agent discovers real canonical tools dynamically)
     let catalog = ToolCatalog::from_registry(&registry, false).await;
+    assert!(catalog.contains("tab.create"), "tab.create must be discovered");
+    assert!(catalog.contains("tab.list"), "tab.list must be discovered");
+
     let executor = StepExecutor::new(tool_bus);
     let cancellation = AgentCancellation::new();
 
-    // 2. Model Reasoning Setup
-    let model = Arc::new(MockAgentModel::new("mock-agent-e2e"));
+    // 4. Model Reasoning Setup
+    let model = Arc::new(MockAgentModel::new("mock-agent-physical-e2e"));
+    // Step 0: Model proposes creating an isolated agent sandbox tab
     model
-        .enqueue_tool_call("browser.echo", json!({ "message": "e2e-complete-pipeline" }))
+        .enqueue_tool_call(
+            "tab.create",
+            json!({ "url": "https://kage.dev/demo", "profile_id": "agent_sandbox" }),
+        )
         .await;
-    model.enqueue_text("All done!").await;
+    // Step 1: Model lists tabs to verify physical browser tab state
+    model
+        .enqueue_tool_call("tab.list", json!({}))
+        .await;
+    // Step 2: Model finishes goal
+    model.enqueue_text("Spawned agent sandbox tab and verified physical browser state.").await;
 
-    // 3. Agent Task Execution
+    // 5. Agent Task Execution through full pipeline
     let planner = AgentPlanner::new(model, catalog, executor, cancellation);
-    let mut task = AgentTask::new("E2E Test Flow", "agent_sandbox");
+    let mut task = AgentTask::new("Spawn and verify isolated browser tab", "agent_sandbox")
+        .with_session_grant(true);
     let plan = planner.run_task(&mut task, None).await.unwrap();
 
     assert_eq!(task.state, TaskState::Completed);
     assert!(plan.completed);
+    assert_eq!(plan.steps.len(), 2, "Expected 2 governed steps executed");
 
-    // 4. Verify Immutable Audit Ledger Integrity
+    // 6. Verify Physical Browser Telemetry from Step 0 (tab.create)
+    let step0 = &plan.steps[0];
+    assert_eq!(step0.tool_id, "tab.create");
+    assert_eq!(step0.status, StepStatus::Success);
+    let res0 = step0.observed_result.as_ref().expect("tab.create result");
+    let created_tab_id = res0.output["tab_id"].as_str().expect("Valid tab_id string");
+    let created_profile = res0.output["profile_id"].as_str().expect("Valid profile_id string");
+    assert_eq!(created_profile, "agent_sandbox", "INV-10: Must preserve explicit ProfileId");
+
+    // Verify physical tab actually exists in TabManager
+    let active_tabs = tab_mgr.list_tabs().await;
+    assert_eq!(active_tabs.len(), 1, "TabManager must hold exactly 1 physical tab");
+    assert_eq!(active_tabs[0].id().to_string(), created_tab_id);
+    assert_eq!(active_tabs[0].profile_id().to_string(), "agent_sandbox");
+
+    // 7. Verify Step 1 (tab.list) reflects physical TabManager state
+    let step1 = &plan.steps[1];
+    assert_eq!(step1.tool_id, "tab.list");
+    let res1 = step1.observed_result.as_ref().expect("tab.list result");
+    assert_eq!(res1.output["total"], 1);
+
+    // 8. Verify Complete Action Lineage in Audit Ledger
     let records = audit_db.get_recent_records(10).await.unwrap();
-    assert!(!records.is_empty());
+    assert_eq!(records.len(), 3, "tab.create (intent + completion) + tab.list (completion)");
 
     let audit_verification = audit_db.verify_chain().await;
     assert!(audit_verification.is_ok(), "Audit cryptographic chain must remain intact");
 
-    println!("  [PASS] Gate M9-J: Full physical E2E pipeline verified (Agent -> Registry -> Model -> ToolBus -> Audit -> Result).");
+    println!("  [PASS] Gate M9-J Physical Telemetry:");
+    println!("    Agent Task ID:     {}", task.task_id);
+    println!("    Step 0 Request ID: {}", step0.lineage.tool_request_id.as_deref().unwrap_or(""));
+    println!("    Step 0 Exec ID:    {}", step0.lineage.tool_execution_id.as_deref().unwrap_or(""));
+    println!("    Physical Tab ID:   {}", created_tab_id);
+    println!("    Physical Profile:  {}", created_profile);
+    println!("    Audit Chain:       {} verified records in security_audit.db", records.len());
+}
+
+// ===========================================================================
+// GATE M9-K: Stale, Unregistered, or Prohibited Tool Call Revalidation (INV-02)
+// ===========================================================================
+#[tokio::test]
+async fn test_gate_09_k_stale_or_unregistered_tool_call_rejected() {
+    let (tool_bus, _, registry) = setup_test_runtime().await;
+    let catalog = ToolCatalog::from_registry(&registry, false).await;
+    let executor = StepExecutor::new(tool_bus.clone());
+    let cancellation = AgentCancellation::new();
+
+    // 1. Test Case A: Model hallucinates an unregistered tool ("system.format_disk")
+    {
+        let model = Arc::new(MockAgentModel::new("mock-unregistered"));
+        model
+            .enqueue_tool_call("system.format_disk", json!({ "target": "/" }))
+            .await;
+
+        let planner = AgentPlanner::new(model, catalog.clone(), executor.clone(), cancellation.clone())
+            .with_capability_registry(registry.clone());
+        let mut task = AgentTask::new("Unregistered tool attempt", "agent_sandbox");
+
+        let res = planner.run_task(&mut task, None).await;
+        assert!(matches!(res, Err(PlannerError::ToolNotFoundInCatalog(ref name)) if name == "system.format_disk"));
+        assert_eq!(task.state, TaskState::Failed);
+    }
+
+    // 2. Test Case B: Stale Tool Call (Tool was in catalog at discovery, but removed/unregistered from live registry before execution)
+    {
+        // Register a temporary dynamic tool
+        let temp_meta = ToolMetadata::new(
+            "temp.dynamic_action",
+            ToolCategory::Browser,
+            PermissionTier::ReadOnly,
+            json!({ "type": "object" }),
+        );
+        registry.register(temp_meta).await;
+
+        // Build catalog while tool exists in registry
+        let stale_catalog = ToolCatalog::from_registry(&registry, false).await;
+        assert!(stale_catalog.contains("temp.dynamic_action"));
+
+        // Now dynamically unregister tool before agent executes
+        let removed = registry.unregister("temp.dynamic_action").await;
+        assert!(removed.is_some(), "Tool must be removed from live registry");
+
+        let model = Arc::new(MockAgentModel::new("mock-stale"));
+        model
+            .enqueue_tool_call("temp.dynamic_action", json!({}))
+            .await;
+
+        let planner = AgentPlanner::new(model, stale_catalog, executor.clone(), cancellation.clone())
+            .with_capability_registry(registry.clone());
+        let mut task = AgentTask::new("Stale tool execution attempt", "agent_sandbox");
+
+        let res = planner.run_task(&mut task, None).await;
+        assert!(
+            matches!(res, Err(PlannerError::ToolNotFoundInCatalog(ref name)) if name == "temp.dynamic_action"),
+            "Stale tool unlinked from live CapabilityRegistry MUST fail closed prior to dispatch"
+        );
+        assert_eq!(task.state, TaskState::Failed);
+    }
+
+    // 3. Test Case C: Malformed Non-Object Arguments Rejected Before Dispatch
+    {
+        let model = Arc::new(MockAgentModel::new("mock-malformed-args"));
+        // Model proposes valid tool name "browser.echo", but passes string argument instead of JSON object
+        model
+            .enqueue_tool_call("browser.echo", json!("invalid_string_not_an_object"))
+            .await;
+
+        let planner = AgentPlanner::new(model, catalog.clone(), executor.clone(), cancellation.clone())
+            .with_capability_registry(registry.clone());
+        let mut task = AgentTask::new("Malformed args attempt", "agent_sandbox");
+
+        let res = planner.run_task(&mut task, None).await;
+        assert!(
+            matches!(res, Err(PlannerError::SchemaViolation { .. } | PlannerError::CapabilityUnauthorized(..))),
+            "Malformed non-object arguments MUST be rejected with SchemaViolation before ToolBus dispatch"
+        );
+        assert_eq!(task.state, TaskState::Failed);
+    }
+
+    println!("  [PASS] Gate M9-K: Stale, unregistered, and malformed tool calls rejected via execution-time capability revalidation.");
+}
+
+// ===========================================================================
+// GATE M9-L: Per-Tool Declarative JSON Schema Validation (INV-02)
+// ===========================================================================
+#[tokio::test]
+async fn test_gate_09_l_per_tool_schema_validation() {
+    let (tool_bus, audit_db, registry) = setup_test_runtime().await;
+    let catalog = ToolCatalog::from_registry(&registry, false).await;
+    let executor = StepExecutor::new(tool_bus.clone());
+    let cancellation = AgentCancellation::new();
+
+    // Case 1: Type mismatch (expected string for 'url', got number 123)
+    {
+        let model = Arc::new(MockAgentModel::new("mock-schema-type-mismatch"));
+        model
+            .enqueue_tool_call("browser.navigate", json!({ "url": 123 }))
+            .await;
+
+        let planner = AgentPlanner::new(model, catalog.clone(), executor.clone(), cancellation.clone())
+            .with_capability_registry(registry.clone());
+        let mut task = AgentTask::new("Navigate with number url", "agent_sandbox");
+
+        let res = planner.run_task(&mut task, None).await;
+        assert!(
+            matches!(res, Err(PlannerError::SchemaViolation { ref tool_id, ref reason }) 
+                if tool_id == "browser.navigate" && reason.contains("expected type 'string'")),
+            "Type mismatch on 'url' must fail schema validation before ToolBus dispatch"
+        );
+        assert_eq!(task.state, TaskState::Failed);
+    }
+
+    // Case 2: Missing required parameter ('url' is required for browser.navigate)
+    {
+        let model = Arc::new(MockAgentModel::new("mock-schema-missing-required"));
+        model
+            .enqueue_tool_call("browser.navigate", json!({ "wait_until": "committed" }))
+            .await;
+
+        let planner = AgentPlanner::new(model, catalog.clone(), executor.clone(), cancellation.clone())
+            .with_capability_registry(registry.clone());
+        let mut task = AgentTask::new("Navigate with missing url", "agent_sandbox");
+
+        let res = planner.run_task(&mut task, None).await;
+        assert!(
+            matches!(res, Err(PlannerError::SchemaViolation { ref tool_id, ref reason }) 
+                if tool_id == "browser.navigate" && reason.contains("Missing required parameter 'url'")),
+            "Missing required parameter 'url' must fail schema validation before ToolBus dispatch"
+        );
+        assert_eq!(task.state, TaskState::Failed);
+    }
+
+    // Case 3: Verify Zero Mutating Side Effects in Audit Ledger
+    let records = audit_db.get_recent_records(10).await.unwrap();
+    assert!(
+        records.is_empty(),
+        "Zero ToolBus audit records should be created when schema validation fails at the planner boundary"
+    );
+
+    println!("  [PASS] Gate M9-L: Per-tool declarative JSON Schema validation enforced before ToolBus dispatch.");
 }

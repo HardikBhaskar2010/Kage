@@ -18,6 +18,7 @@ pub mod bus;
 pub mod audit;
 pub mod lineage;
 pub mod registry;
+pub mod admission;
 
 // Re-export primary API surface.
 pub use tool::{KageTool, ToolRequest, ToolResponse, ToolError};
@@ -32,4 +33,7 @@ pub use lineage::{
 pub use registry::{
     CapabilityRegistry, ToolMetadata, ToolCategory, IdempotencyClassification, RetryPolicy,
     DeclarativeContract,
+};
+pub use admission::{
+    AdmissionState, DispatchAdmissionGate, DispatchDenial, DispatchPermit,
 };

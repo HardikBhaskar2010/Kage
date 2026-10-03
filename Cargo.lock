@@ -2041,6 +2041,7 @@ dependencies = [
  "kage-context",
  "kage-core",
  "kage-storage",
+ "regex",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

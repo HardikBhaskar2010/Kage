@@ -29,6 +29,7 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
+use crate::admission::{DispatchAdmissionGate, DispatchDenial};
 use crate::audit::{digest_json, ActorType, AuditSink, AuditStatus, CanonicalAuditRecord};
 use crate::lineage::ExecutionStatus;
 use crate::policy::{AuditFailurePolicy, PolicyContext, PolicyDecision, PolicyEngine};
@@ -48,6 +49,7 @@ pub struct ToolBus {
     sanitizer: SecretSanitizer,
     audit_sink: Option<Arc<dyn AuditSink>>,
     host_instance_id: String,
+    admission_gate: DispatchAdmissionGate,
 }
 
 impl ToolBus {
@@ -60,6 +62,7 @@ impl ToolBus {
             sanitizer: SecretSanitizer::new(),
             audit_sink: None,
             host_instance_id: format!("inst_{}", uuid::Uuid::new_v4().simple()),
+            admission_gate: DispatchAdmissionGate::new(),
         }
     }
 
@@ -72,6 +75,17 @@ impl ToolBus {
     pub fn with_host_instance_id(mut self, id: impl Into<String>) -> Self {
         self.host_instance_id = id.into();
         self
+    }
+
+    /// Set an explicit admission gate (e.g. shared with AgentCancellation / HumanTakeover).
+    pub fn with_admission_gate(mut self, gate: DispatchAdmissionGate) -> Self {
+        self.admission_gate = gate;
+        self
+    }
+
+    /// Access the underlying atomic admission gate.
+    pub fn admission_gate(&self) -> &DispatchAdmissionGate {
+        &self.admission_gate
     }
 
     /// Set an [`AuditSink`] on builder pattern.
@@ -125,7 +139,22 @@ impl ToolBus {
         let task_id = request.task_id.clone();
         let step_id = request.step_id.clone();
 
-        // Check cancellation immediately (INV-09)
+        // 0. Atomic Admission Gate check (INV-09 & Human Takeover state barrier)
+        let _dispatch_permit = match self.admission_gate.acquire_permit() {
+            Ok(permit) => permit,
+            Err(DispatchDenial::Cancelled) => {
+                return Err(ToolError::Cancelled {
+                    request_id: request.request_id.clone(),
+                });
+            }
+            Err(DispatchDenial::TakeoverActive) => {
+                return Err(ToolError::HumanTakeoverActive {
+                    tool_id: request.tool_id.clone(),
+                });
+            }
+        };
+
+        // Check cancellation token immediately (INV-09)
         if cancel.is_cancelled() {
             return Err(ToolError::Cancelled {
                 request_id: request.request_id.clone(),
@@ -149,9 +178,16 @@ impl ToolBus {
             });
         }
 
-        // 2.5 Strict eval_js / Developer Tool Prohibition (Phase 8 M8 Contract GATE-08-H)
-        // Autonomous agent planner CANNOT invoke arbitrary Runtime.evaluate / developer tools without explicit escalation.
+        // 2.5 Strict eval_js / Developer Tool Prohibition & Per-Tool Schema Validation
         if let Some(meta) = self.capability_registry.get(&request.tool_id).await {
+            // Per-tool JSON Schema validation (INV-02)
+            if let Err(reason) = meta.validate_arguments(&request.args) {
+                return Err(ToolError::SchemaViolation {
+                    tool_id: request.tool_id.clone(),
+                    reason,
+                });
+            }
+
             let is_agent_caller = task_id.is_some() || ctx_partial.caller_id.contains("agent") || ctx_partial.caller_id == "ai_subsystem";
             if meta.is_developer_only && is_agent_caller {
                 let duration_ms = start.elapsed().as_millis() as u64;

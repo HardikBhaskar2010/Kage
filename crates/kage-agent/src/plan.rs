@@ -76,6 +76,8 @@ pub struct PlanStep {
     pub lineage: ActionLineage,
     /// Observed tool response after execution.
     pub observed_result: Option<ToolResponse>,
+    /// Deterministic postcondition verification outcome (INV-08).
+    pub verification: Option<crate::verifier::VerificationOutcome>,
     /// Step creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Step completion timestamp.
@@ -101,6 +103,7 @@ impl PlanStep {
             status: StepStatus::Pending,
             lineage: ActionLineage::new(task_id, step_id),
             observed_result: None,
+            verification: None,
             created_at: Utc::now(),
             completed_at: None,
         }
@@ -112,6 +115,24 @@ impl PlanStep {
         self.lineage.tool_request_id = Some(response.request_id.clone());
         self.lineage.tool_execution_id = Some(response.execution_id.clone());
         self.observed_result = Some(response);
+        self.completed_at = Some(Utc::now());
+    }
+
+    /// Record step completion accompanied by deterministic postcondition verification (INV-08).
+    pub fn complete_with_verification(
+        &mut self,
+        response: ToolResponse,
+        outcome: crate::verifier::VerificationOutcome,
+    ) {
+        self.status = if outcome.is_pass() {
+            StepStatus::Success
+        } else {
+            StepStatus::Failed
+        };
+        self.lineage.tool_request_id = Some(response.request_id.clone());
+        self.lineage.tool_execution_id = Some(response.execution_id.clone());
+        self.observed_result = Some(response);
+        self.verification = Some(outcome);
         self.completed_at = Some(Utc::now());
     }
 

@@ -171,6 +171,77 @@ impl ToolMetadata {
         self.category = ToolCategory::Developer;
         self
     }
+
+    /// Validate input arguments against this tool's declarative JSON schema.
+    pub fn validate_arguments(&self, args: &serde_json::Value) -> Result<(), String> {
+        validate_json_schema(&self.schema, args)
+    }
+}
+
+/// Validate a JSON arguments payload against a declarative JSON Schema object.
+pub fn validate_json_schema(schema: &serde_json::Value, args: &serde_json::Value) -> Result<(), String> {
+    if !args.is_object() && !args.is_null() {
+        return Err("Arguments must be a JSON object".to_string());
+    }
+
+    let empty_obj = serde_json::Map::new();
+    let args_obj = args.as_object().unwrap_or(&empty_obj);
+
+    // 1. Validate required fields
+    if let Some(required) = schema.get("required").and_then(|r| r.as_array()) {
+        for req in required {
+            if let Some(field_name) = req.as_str() {
+                if !args_obj.contains_key(field_name) || args_obj[field_name].is_null() {
+                    return Err(format!("Missing required parameter '{}'", field_name));
+                }
+            }
+        }
+    }
+
+    // 2. Validate property types & constraints
+    if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
+        let additional_props_allowed = schema
+            .get("additionalProperties")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        for (arg_key, arg_val) in args_obj {
+            if let Some(prop_schema) = properties.get(arg_key) {
+                // Check type
+                if let Some(expected_type) = prop_schema.get("type").and_then(|t| t.as_str()) {
+                    let type_matches = match expected_type {
+                        "string" => arg_val.is_string(),
+                        "number" => arg_val.is_number(),
+                        "integer" => arg_val.is_i64() || arg_val.is_u64(),
+                        "boolean" => arg_val.is_boolean(),
+                        "object" => arg_val.is_object(),
+                        "array" => arg_val.is_array(),
+                        _ => true,
+                    };
+                    if !type_matches {
+                        return Err(format!(
+                            "Parameter '{}' expected type '{}', got incompatible JSON value: {}",
+                            arg_key, expected_type, arg_val
+                        ));
+                    }
+                }
+
+                // Check enum constraints
+                if let Some(enum_vals) = prop_schema.get("enum").and_then(|e| e.as_array()) {
+                    if !enum_vals.iter().any(|v| v == arg_val) {
+                        return Err(format!(
+                            "Parameter '{}' value {} is not in allowed enum options: {:?}",
+                            arg_key, arg_val, enum_vals
+                        ));
+                    }
+                }
+            } else if !additional_props_allowed {
+                return Err(format!("Unknown parameter '{}' is not permitted by schema", arg_key));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Dynamic, thread-safe capability registry for all registered browser tools.
@@ -196,6 +267,12 @@ impl CapabilityRegistry {
     pub async fn get(&self, tool_id: &str) -> Option<ToolMetadata> {
         let tools = self.tools.read().await;
         tools.get(tool_id).cloned()
+    }
+
+    /// Unregister or revoke a tool capability dynamically.
+    pub async fn unregister(&self, tool_id: &str) -> Option<ToolMetadata> {
+        let mut tools = self.tools.write().await;
+        tools.remove(tool_id)
     }
 
     /// Return all registered tools.

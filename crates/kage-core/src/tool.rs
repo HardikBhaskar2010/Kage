@@ -217,6 +217,9 @@ pub enum ToolError {
     #[error("tool call cancelled by token for request '{request_id}'")]
     Cancelled { request_id: String },
 
+    #[error("tool execution blocked: human takeover active for '{tool_id}'")]
+    HumanTakeoverActive { tool_id: String },
+
     #[error("tool execution timed out after {timeout_ms}ms")]
     Timeout { tool_id: String, timeout_ms: u64 },
 
